@@ -1,10 +1,15 @@
 from flask import Flask
+from graderchat.routes.api import APIController
+from graderchat.services.llm_client import LLMClient
+from graderchat.services.grader import Grader
 
 def create_app():
     app = Flask(__name__)
 
-    # Register blueprints
-    from .routes.main import main_bp
-    app.register_blueprint(main_bp)
+    llm = LLMClient()
+    grader = Grader()
+
+    controller = APIController(llm, grader)
+    controller.register(app)
 
     return app

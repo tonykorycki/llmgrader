@@ -1,12 +1,97 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hello Flask Package</title>
+    <title>GraderChat</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
 <body>
-    <h1>Hello from a packaged Flask app!</h1>
-    <p>This is the foundation for your future chatbot autograder.</p>
+    <div class="container">
+
+    <!-- LEFT COLUMN -->
+    <div class="left-column">
+
+        <!-- File Upload -->
+        <div class="panel">
+            <h3>Solution File</h3>
+            <input type="file" id="solution-file">
+            <button id="load-file" type="button">Load</button>
+        </div>
+        <div class="panel">
+            <h3>Student Solutions File</h3>
+            <input type="file" id="student-file">
+            <button id="load-student-file" type="button">Load Student Solutions</button>
+        </div>
+
+        
+
+        <!-- Question Selector -->
+        <div class="panel">
+            <h3>Question Number</h3>
+            <select id="question-number"></select>
+        </div>
+
+        <!-- Question Text -->
+        <div class="panel">
+            <h3>Question</h3>
+            <div id="question-text">Load a file to begin.</div>
+        </div>
+
+        <!-- Student Solution -->
+        <div class="panel">
+            <h3>Your Solution</h3>
+            <textarea id="student-solution" rows="8" style="width: 100%;">Not loaded</textarea>
+        </div>
+
+        <!-- Grade Button -->
+        <div class="panel">
+            <button id="grade-button">Grade</button>
+        </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-column">
+
+        <!-- Grade Status -->
+        <div class="panel">
+            <h3>Grade</h3>
+            <div id="grade-status" class="status-not-graded">Not graded</div>
+        </div>
+
+        <!-- Reference Solution -->
+        <div class="panel">
+            <h3>Reference Solution</h3>
+            <div id="ref-solution">Not loaded</div>
+        </div>
+
+        <!-- Grading Notes -->
+        <div class="panel">
+            <h3>Grading Notes</h3>
+            <div id="grading-notes">Not loaded</div>
+        </div>
+
+        <!-- Explanation -->
+        <div class="panel">
+            <h3>Explanation</h3>
+            <div id="explanation">No explanation yet.</div>
+        </div>
+
+        <!-- Chat History -->
+        <div class="panel">
+            <h3>Chat</h3>
+            <div id="chat-history" class="scrollable"></div>
+        </div>
+
+        <!-- Chat Input -->
+        <div class="panel chat-input-panel">
+            <input type="text" id="chat-input" placeholder="Ask a question...">
+            <button id="send-chat">Send</button>
+        </div>
+
+    </div>
+
+</div>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>

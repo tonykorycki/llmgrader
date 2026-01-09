@@ -1,0 +1,159 @@
+# Vivado project artifacts
+*.xpr
+*.jou
+*.log
+*.str
+*.cache/
+*.runs/
+*.sim/
+*.hw/
+*.ip_user_files/
+*.webtalk/
+*.gen/
+*.restore/
+*.wcfg
+*.wdb
+*.dcp
+*.ltx
+*.srcs/
+hls/
+*_ide/
+
+# Vitis build artifacts
+*.xo
+*.xclbin
+*.log
+*.jou
+*.xml
+*.json
+*.o
+*.obj
+*.exe
+*.elf
+*.bin
+*.map
+*.vitis/
+_build/
+_build.hw/
+_build.sw/
+build/
+.vscode/
+*.db
+*.pb
+**/dfx_runtime.txt
+*summary*
+*.rpt
+.autopilot/
+*.aps
+*.directive
+syn/
+impl/
+.debug/
+*.app
+
+
+
+
+# General
+*.backup
+*.tmp
+*.bak
+*.swp
+*.swo
+*.DS_Store 
+*.ini
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Distribution artifacts
+*.egg-info/
+dist/
+build/
+
+# IDE/editor settings
+.vscode/
+.idea/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook checkpoints
+**/.ipynb_checkpoints/
+**/.ipynb_checkpoints/* 
+
+# xilinxutils generated files
+sim/
+synth/
+impl/
+
+# Core LaTeX auxiliary files
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.synctex
+*.nav
+*.snm
+*.vrb
+
+# Bibliography
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+
+# Index
+*.idx
+*.ilg
+*.ind
+
+# Glossaries
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.ist
+
+# TikZ externalization
+*.dpth
+*.md5
+*.auxlock
+*.tikz
+*.pdf_tex
+
+# minted cache directory
+_minted-*
+
+# latexmk
+*.latexmk
+
+# VS Code LaTeX Workshop
+*.pdfdir
+*.pdfpc
+*.pdfsync
+
+# Output files
+*.dvi
+*.ps 
+
+# Minted cache directory
+_minted*/
