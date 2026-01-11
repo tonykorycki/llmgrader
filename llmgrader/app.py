@@ -1,6 +1,6 @@
 from flask import Flask
-from graderchat.routes.api import APIController
-from graderchat.services.grader import Grader
+from llmgrader.routes.api import APIController
+from llmgrader.services.grader import Grader
 
 def create_app(
         questions_root : str ="questions", 

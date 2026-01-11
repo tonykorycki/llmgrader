@@ -1,5 +1,5 @@
 import textwrap
-from graderchat.services.parselatex import parse_latex_soln, get_text_soln, extract_json_block
+from llmgrader.services.parselatex import parse_latex_soln, get_text_soln, extract_json_block
 import os
 import shutil
 from pathlib import Path

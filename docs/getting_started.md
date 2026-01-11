@@ -23,7 +23,7 @@ http://127.0.0.1:5000/
 ## Project Structure
 
 ```
-graderchat/
+llmgrader/
     app.py
     routes/
     services/

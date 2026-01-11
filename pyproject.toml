@@ -1,5 +1,5 @@
 [project]
-name = "graderchat"
+name = "llmgrader"
 version = "0.1.0"
 description = "Lightweight Flask-based chatbot autograder"
 authors = [
@@ -14,8 +14,8 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["graderchat*"]
+include = ["llmgrader*"]
 
 [project.scripts]
-latextotxt = "graderchat.utils.latextotxt:main"
+latextotxt = "llmgrader.utils.latextotxt:main"
 

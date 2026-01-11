@@ -1,27 +1,20 @@
-# GraderChat
+# LLM Grader
 
-GraderChat is a lightweight Flask-based chatbot designed to help with autograding engineering problems using large language models. 
+LLM Grader is a lightweight Flask-based application to help with autograding engineering problems using large language models. 
 The project is just me playing around for now.  So don't take anything too serious.  It is more for my own education.
 
 ## Project Status
 
 The current version includes:
 
-- A Python package structure (graderchat/)
+- A Python package structure (llmgrader/)
 - A minimal Flask application factory
 - Basic routing and template scaffolding
 - Initial documentation structure for GitHub Pages
 
-I am going to add new features.
-
-- Chat interface for interacting with an LLM
-- Autograding pipeline using reference solutions and grading notes
-- OpenAI integration
-- Front-end UI for question selection, chat history, and grading feedback
-
 ## Goals
 
-The long-term goal of GraderChat is to provide:
+The long-term goal of LLM Grader is to provide:
 
 - A clean, extensible Flask interface for student interaction
 - A modular grading backend powered by LLMs

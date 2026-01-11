@@ -7,10 +7,10 @@ python run.py
 ```
 
 ## Adding New Routes
-Create a new file in graderchat/routes/ and register it in create_app().
+Create a new file in `llmgrader/routes/` and register it in `create_app()`.
 
 ## Adding New Services
-Place reusable logic in graderchat/services/.
+Place reusable logic in `llmgrader/services/`.
 
 ## GitHub Pages
 To enable GitHub Pages:

@@ -1,6 +1,6 @@
-# GraderChat Documentation
+# LLM Grader Documentation
 
-Welcome to the documentation for GraderChat, a lightweight Flask-based chatbot for autograding engineering problems.
+Welcome to the documentation for LLM Grader, a lightweight Flask-based chatbot for autograding engineering problems with LLMs
 
 ## Contents
 - [Getting Started](getting_started.md)

@@ -1,4 +1,4 @@
-from graderchat.app import create_app
+from llmgrader.app import create_app
 
 import os
 import argparse
