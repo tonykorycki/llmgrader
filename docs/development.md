@@ -28,4 +28,5 @@ Since we are deploying to render.com, we have to be picky about the requirements
    - Replace `pydantic` with `pydantic==1.10.15`
    - Remove `pydantic_core`
    - Remove `rpds-py`
+   - Remove `jiter`, `argon2-cffi`, `argon2-cffi-bindings`
  

@@ -1,7 +1,5 @@
 annotated-types
 anyio
-argon2-cffi
-argon2-cffi-bindings
 arrow
 asttokens
 async-lru
@@ -43,7 +41,6 @@ isort
 itsdangerous
 jedi
 Jinja2
-jiter
 json5
 jsonpointer
 jsonschema
