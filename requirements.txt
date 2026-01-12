@@ -4,5 +4,5 @@ pandas
 numpy
 requests
 openai
-pydantic==1.10.15
+pydantic>=2,<3
 pandas
