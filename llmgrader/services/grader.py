@@ -148,6 +148,9 @@ class Grader:
             parent_repo = env_path
         else:
             parent_repo = os.path.join(os.getcwd(), "soln_repo")
+        
+        # If the directory doesn't exist, create it
+        os.makedirs(parent_repo, exist_ok=True)
         return parent_repo
 
     def save_uploaded_file(self, file_storage):
