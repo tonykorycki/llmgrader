@@ -125,6 +125,23 @@ class APIController:
             # Re-run discovery
             self.grader.discover_units()
             return jsonify({"status": "ok"})
+        
+        @app.route("/admin")
+        def admin_page():
+            return render_template("admin.html")
+
+        @app.route("/admin/upload", methods=["POST"])
+        def upload():
+            if "file" not in request.files:
+                return {"error": "no file"}, 400
+
+            f = request.files["file"]
+
+            # Hand the Werkzeug FileStorage object to the grader
+            self.grader.save_uploaded_file(f)
+
+            return {"status": "ok"}
+
 
                 
         app.register_blueprint(bp)

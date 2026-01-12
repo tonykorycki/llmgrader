@@ -8,6 +8,8 @@ import os
 import pandas as pd
 from openai import OpenAI
 import xml.etree.ElementTree as ET
+import zipfile
+from datetime import datetime
 
 from llmgrader.services.repo import load_from_repo
 
@@ -128,6 +130,56 @@ class Grader:
         # Discover units
         self.discover_units() 
 
+    def get_local_repo_parent_path(self) -> str:
+        """
+        Returns the parent directory path for the local repository.
+        The repo will be cloned or manually uploaded into this directory.
+        So if local_repo is "soln_repo", this function returns the parent directory,
+        and the git repo is "hwdesign-soln.git", the full path will be "soln_repo/hwdesign-soln".
+
+        Returns
+        -------
+        str
+            Parent directory path for the local repository.
+        """
+        # Get the parent directory for the local repo
+        env_path = os.environ.get("SOLN_REPO_PATH")
+        if env_path:
+            parent_repo = env_path
+        else:
+            parent_repo = os.path.join(os.getcwd(), "soln_repo")
+        return parent_repo
+
+    def save_uploaded_file(self, file_storage):
+        # file_storage is a Werkzeug FileStorage object
+        save_path = os.path.join(self.scratch_dir, file_storage.filename)
+        file_storage.save(save_path)
+        print(f"Saved uploaded file to {save_path}")
+
+        # Get the parent directory for the local repo
+        parent_repo = self.get_local_repo_parent_path()
+
+        # Ensure the repo directory exists (or clear it)
+        if os.path.exists(parent_repo):
+            shutil.rmtree(parent_repo)
+        os.makedirs(parent_repo, exist_ok=True)
+
+        # 3. Unzip into local_repo
+        try:
+            with zipfile.ZipFile(save_path, "r") as z:
+                z.extractall(parent_repo)
+            print(f"Extracted uploaded file into {parent_repo}")
+        except zipfile.BadZipFile:
+            print("Uploaded file is not a valid zip file.")
+            return {"error": "Uploaded file is not a valid zip file."}, 400
+        
+        except Exception as e:
+            # Catch-all for unexpected issues
+            print(f"Unexpected error while extracting ZIP: {e}")
+            return {"error": "Failed to extract ZIP file."}, 500
+        
+        return {"status": "ok"}
+
 
     def discover_units(self):
         """
@@ -137,29 +189,51 @@ class Grader:
 
         # Log the search process
         log = open(os.path.join(self.scratch_dir, "discovery_log.txt"), "w")
+        
+        # Write the time and date
 
-        # Get the local repo path
-        env_path = os.environ.get("SOLN_REPO_PATH")
-        if env_path:
-            self.local_repo = env_path
-        else:
-            self.local_repo = os.path.join(os.getcwd(), "soln_repo")
-        log.write('Using local repository path: ' + self.local_repo + '\n')
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log.write(f'Discovery started at {now}\n')
+
+        # Get the parent repo paths
+        parent_repo = self.get_local_repo_parent_path()
 
         # Load the git repo if specified
         if self.remote_repo is not None:
             log.write('Loading questions repository from: ' + self.remote_repo + '\n')
-            load_from_repo(self.remote_repo, target_dir=self.local_repo)
-            log.write('Git repository loaded into: ' + self.local_repo + '\n')
+            local_repo = os.path.join(parent_repo, "soln_repo")
+            try:
+                load_from_repo(self.remote_repo, target_dir=local_repo)
+            except Exception as e:
+                log.write('Failed to load git repository: ' + str(e) + '\n')
+                local_repo = None
+            log.write('Git repository loaded into: ' + local_repo + '\n')
         else:
             log.write('No remote repository specified. Using local files only.\n')
+            local_repo = None
+
+        # If local_repo is not set, set the candidates to all subdirectories of parent_repo
+        if local_repo is None:
+            candidates = [
+                os.path.join(parent_repo, d)
+                for d in os.listdir(parent_repo)
+                if os.path.isdir(os.path.join(parent_repo, d))
+            ]
+        else:
+            # Otherwise, just use the local_repo directory
+            candidates = [local_repo]
 
         # Look for the units.csv file in the local_repo directory
-        units_csv_path = os.path.join(self.local_repo, "units.csv")
-
-        # Check if units.csv exists
-        if not os.path.exists(units_csv_path):
-            log.write(f'No units.csv file found in {self.local_repo}.\n')
+        local_repo = None
+        for c in candidates:
+            units_csv_path = os.path.join(c, "units.csv")
+            if os.path.exists(units_csv_path):
+                local_repo = c
+                log.write(f'Found units.csv in candidate directory: {c}\n')
+                break
+        
+        if local_repo is None:
+            log.write('No local repository with units.csv found in ' + parent_repo + '\n')
             self.units = {}
             log.close()
             return
@@ -184,7 +258,7 @@ class Grader:
         # Loop over each unit and specified solution file
         for name, soln_fn in zip(self.units_list, self.soln_fn_list):
             soln_fn = os.path.normpath(soln_fn)
-            tex_path = os.path.join(self.local_repo, soln_fn)
+            tex_path = os.path.join(local_repo, soln_fn)
             soln_folder = os.path.dirname(tex_path)
 
             log.write(f'Processing unit: {name}\n')
