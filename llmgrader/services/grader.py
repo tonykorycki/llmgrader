@@ -9,6 +9,7 @@ from openai import OpenAI, APITimeoutError
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from llmgrader.services.parselatex import parse_latex_soln
 
 from llmgrader.services.repo import load_from_repo
@@ -415,21 +416,46 @@ class Grader:
             return grade
 
         print('Calling OpenAI for grading...')
-        try:
-            response = client.responses.parse(
+        
+        # Define a function to call the OpenAI API
+        def call_openai_api():
+            return client.responses.parse(
                 model=model,
                 input=task,
                 text_format=GradeResult,
                 temperature=temperature,
                 timeout=timeout
-            )   
+            )
+        
+        try:
+            # Use ThreadPoolExecutor to add an additional timeout wrapper
+            additional_timeout = 5  # seconds
+            server_timeout = timeout + additional_timeout
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(call_openai_api)
+                response = future.result(timeout=server_timeout)
+            
             print('Received response from OpenAI.')
             grade = response.output_parsed.model_dump()
-        except APITimeoutError:
+        except FuturesTimeoutError:
+            print('OpenAI API server did not respond in time.')
+            explanation = f'OpenAI API server did not respond within {server_timeout} seconds, '\
+             + f'an additional  {additional_timeout} seconds beyond the specified timeout of {timeout} seconds.'\
+             + ' This timeout may indicate server overload or network issues.'
             grade = {
                 'result': 'error', 
-                'full_explanation': f'OpenAI API exceeded time out limit of {timeout} seconds.', 
-                'feedback': 'The grading request took too long to process.'}
+                'full_explanation': explanation, 
+                'feedback': 'OpenAI server not responding in time.  Try again'}
+        except APITimeoutError:
+            print('OpenAI API server responded with a timeout error.')
+            explanation = f'OpenAI API received the request, but responded that '+\
+                 f'that its processing exceeded timeout limit of {timeout} seconds.'
+            feedback  = 'The grading request took too long to process. ' +\
+                'Try increasing the timeout or using a simpler model.'
+            grade = {
+                'result': 'error', 
+                'full_explanation': explanation, 
+                'feedback': feedback}
         except Exception as e:
             grade = {
                 'result': 'error', 
