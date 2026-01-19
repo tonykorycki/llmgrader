@@ -8,7 +8,12 @@ let currentUnitItems = {};          // dict: qtag -> question object
 let currentUnitName = null;         // current unit name
 let currentStudentSolutions = {};   // dict: qtag -> student solution
 
-// sessionState[unitName][qtag] = { student_solution, feedback, explanation, grade_status }
+// sessionState[unitName][qtag] = {
+//     student_solution: "...",
+//     parts: {
+//         [part_label]: { feedback: "", explanation: "", grade_status: "" }
+//     }
+// }
 let sessionState = {};
 
 //
@@ -46,18 +51,59 @@ function getSessionData(unitName, qtag) {
     if (!sessionState[unitName][qtag]) {
         sessionState[unitName][qtag] = {
             student_solution: "",
-            feedback: "",
-            explanation: "",
-            grade_status: ""
+            parts: {}
         };
+    }
+    // Ensure parts object exists
+    if (!sessionState[unitName][qtag].parts) {
+        sessionState[unitName][qtag].parts = {};
     }
     return sessionState[unitName][qtag];
 }
 
-function updateSessionData(unitName, qtag, updates) {
+function updateSessionData(unitName, qtag, updates, partLabel = null) {
     const data = getSessionData(unitName, qtag);
-    Object.assign(data, updates);
+    
+    // If partLabel is provided, update the part-specific data
+    if (partLabel) {
+        if (!data.parts[partLabel]) {
+            data.parts[partLabel] = {
+                feedback: "",
+                explanation: "",
+                grade_status: ""
+            };
+        }
+        Object.assign(data.parts[partLabel], updates);
+    } else {
+        // Otherwise, update qtag-level data (e.g., student_solution)
+        Object.assign(data, updates);
+    }
+    
     saveSessionState();
+}
+
+function pruneSessionState(unitName, currentQtags) {
+    // Remove any qtags from sessionState[unit] that are not in currentQtags
+    if (!sessionState[unitName]) {
+        return; // Nothing to prune
+    }
+    
+    const existingQtags = Object.keys(sessionState[unitName]);
+    const currentQtagSet = new Set(currentQtags);
+    
+    let pruned = false;
+    existingQtags.forEach(qtag => {
+        if (!currentQtagSet.has(qtag)) {
+            console.log(`Pruning stale qtag: ${qtag} from unit: ${unitName}`);
+            delete sessionState[unitName][qtag];
+            pruned = true;
+        }
+    });
+    
+    if (pruned) {
+        saveSessionState();
+        console.log(`Session state pruned for unit: ${unitName}`);
+    }
 }
 
 //
@@ -165,9 +211,70 @@ async function loadUnit(unitName) {
     currentUnitQtags = data.qtags;
     currentUnitItems = data.items;
 
+    // Prune stale qtags from session state
+    pruneSessionState(unitName, data.qtags);
+
     populateQuestionDropdown(currentUnitQtags);
 }
 
+
+//
+// ---------------------------
+//  RESTORE PART UI
+// ---------------------------
+function restorePartUI(qtag, partLabel) {
+    // Get session data for the question
+    const sessionData = getSessionData(currentUnitName, qtag);
+    
+    // Get part-specific data if available
+    let partData = null;
+    if (partLabel && partLabel !== "all" && sessionData.parts[partLabel]) {
+        partData = sessionData.parts[partLabel];
+    } else if (partLabel === "all" && sessionData.parts["all"]) {
+        partData = sessionData.parts["all"];
+    }
+    
+    const explanationBox = document.getElementById("full-explanation-box");
+    const feedbackBox = document.getElementById("feedback-box");
+    const gradeStatus = document.getElementById("grade-status");
+    
+    // Restore from part-specific data if available
+    if (partData) {
+        if (partData.explanation) {
+            explanationBox.textContent = partData.explanation;
+        } else {
+            explanationBox.textContent = "Not yet graded. No explanation yet.";
+        }
+        
+        if (partData.feedback) {
+            feedbackBox.textContent = partData.feedback;
+        } else {
+            feedbackBox.textContent = "Not yet graded. No feedback yet.";
+        }
+        
+        if (partData.grade_status) {
+            gradeStatus.textContent = 
+                partData.grade_status === "pass" ? "Correct" :
+                partData.grade_status === "fail" ? "Incorrect" :
+                partData.grade_status === "error" ? "Error" :
+                partData.grade_status;
+            gradeStatus.className = 
+                partData.grade_status === "pass" ? "status-correct" :
+                partData.grade_status === "fail" ? "status-incorrect" :
+                partData.grade_status === "error" ? "status-error" :
+                "status-not-graded";
+        } else {
+            gradeStatus.textContent = "";
+            gradeStatus.className = "status-not-graded";
+        }
+    } else {
+        // No part data available - show default state
+        explanationBox.textContent = "Not yet graded. No explanation yet.";
+        feedbackBox.textContent = "Not yet graded. No feedback yet.";
+        gradeStatus.textContent = "";
+        gradeStatus.className = "status-not-graded";
+    }
+}
 
 //
 // ---------------------------
@@ -210,41 +317,16 @@ function displayQuestion(qtag) {
         partSelect.appendChild(opt);
     });
 
-    // Restore grading UI from session state
-    const explanationBox = document.getElementById("full-explanation-box");
-    const feedbackBox = document.getElementById("feedback-box");
-    const gradeStatus = document.getElementById("grade-status");
-    const gradePoints = document.getElementById("grade-points");
+    // Add event listener for part selection changes
+    partSelect.onchange = () => {
+        restorePartUI(qtag, partSelect.value);
+    };
 
-    if (sessionData.explanation) {
-        explanationBox.textContent = sessionData.explanation;
-    } else {
-        explanationBox.textContent = "Not yet graded. No explanation yet.";
-    }
-
-    if (sessionData.feedback) {
-        feedbackBox.textContent = sessionData.feedback;
-    } else {
-        feedbackBox.textContent = "Not yet graded. No feedback yet.";
-    }
-
-    if (sessionData.grade_status) {
-        gradeStatus.textContent = 
-            sessionData.grade_status === "pass" ? "Correct" :
-            sessionData.grade_status === "fail" ? "Incorrect" :
-            sessionData.grade_status === "error" ? "Error" :
-            sessionData.grade_status;
-        gradeStatus.className = 
-            sessionData.grade_status === "pass" ? "status-correct" :
-            sessionData.grade_status === "fail" ? "status-incorrect" :
-            sessionData.grade_status === "error" ? "status-error" :
-            "status-not-graded";
-    } else {
-        gradeStatus.textContent = "";
-        gradeStatus.className = "status-not-graded";
-    }
+    // Restore grading UI from session state for the currently selected part
+    restorePartUI(qtag, partSelect.value);
 
     // Update grade points/optional display
+    const gradePoints = document.getElementById("grade-points");
     if (qdata.grade === false) {
         gradePoints.textContent = "optional";
     } else if (qdata.grade === true) {
@@ -320,9 +402,10 @@ function populateQuestionDropdown(qtags) {
     solBox.addEventListener("input", () => {
         const qtag = dropdown.value;
         if (currentUnitName && qtag) {
+            // Save student solution at qtag level (not per-part)
             updateSessionData(currentUnitName, qtag, {
                 student_solution: solBox.value
-            });
+            }, null);
         }
     });
 }
@@ -389,13 +472,20 @@ async function gradeCurrentQuestion() {
     document.getElementById("full-explanation-box").textContent =
         data.full_explanation;
 
-    // Save grading results to session state
+    // Save student solution at qtag level
     updateSessionData(currentUnitName, qtag, {
-        student_solution: studentSolution,
+        student_solution: studentSolution
+    });
+
+    // Save grading results per part
+    // If "all" is selected, we can store under "all" as a part_label
+    // or handle it differently based on your requirements
+    const partToSave = selectedPart === "all" ? "all" : selectedPart;
+    updateSessionData(currentUnitName, qtag, {
         feedback: data.feedback || "",
         explanation: data.full_explanation || "",
         grade_status: data.result || ""
-    });
+    }, partToSave);
 }
 
 
