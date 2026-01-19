@@ -16,6 +16,10 @@ class APIController:
         def home():
             return render_template("index.html")
 
+        @bp.get("/dashboard")
+        def dashboard():
+            return render_template("dashboard.html")
+
         @bp.post("/chat")
         def chat():
             data = request.json
