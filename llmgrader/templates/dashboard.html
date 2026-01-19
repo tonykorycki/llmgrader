@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard - AI-Auto Grader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+
+<!-- Top Banner -->
+<div class="nyu-banner">
+    <div class="left">
+        <img src="{{ url_for('static', filename='images/nyu-logo.png') }}" 
+             alt="NYU Logo" class="nyu-logo">
+        <div class="title-section">
+            <div class="title">Dashboard - OpenAI Grader</div>
+            <div class="professors">Profs. Sundeep Rangan, Siddharth Garg</div>
+        </div>
+    </div>
+</div>
+
+<!-- Instructions -->
+<div style="text-align: left; font-size: 0.85rem; margin-top: 4px; margin-bottom: 8px; padding: 0 16px;">
+  <a href="https://sdrangan.github.io/hwdesign/aiautograder/"
+     target="_blank"
+     style="color: #57068c; text-decoration: none;">
+     Instructions for using this grader
+  </a>
+  <span style="margin: 0 8px;">|</span>
+  <a href="{{ url_for('api.home') }}" style="color: #57068c; text-decoration: none;">Back to Grader</a>
+</div>
+
+<div class="dashboard-container">
+    
+    <!-- Unit Selection -->
+    <div class="dashboard-controls">
+        <label for="dashboard-unit-select">Unit:</label>
+        <select id="dashboard-unit-select">
+            <option value="">Select a unit...</option>
+        </select>
+        <button id="download-submission-btn" class="download-btn">Download submission</button>
+    </div>
+    
+    <!-- Dashboard Title -->
+    <h1 class="dashboard-title">Dashboard</h1>
+    
+    <!-- Results Table -->
+    <div class="dashboard-table-container">
+        <table class="dashboard-table">
+            <thead>
+                <tr>
+                    <th>Question</th>
+                    <th>Required</th>
+                    <th>Completed Parts</th>
+                    <th>Points</th>
+                </tr>
+            </thead>
+            <tbody id="dashboard-table-body">
+                <tr>
+                    <td colspan="4" style="text-align: center; color: #888;">
+                        No data loaded. Select a unit to view results.
+                    </td>
+                </tr>
+            </tbody>
+            <tfoot id="dashboard-table-footer">
+                <tr class="total-row">
+                    <td colspan="3" style="text-align: right; font-weight: bold;">Total:</td>
+                    <td id="total-all-points" style="font-weight: bold;">0/0</td>
+                </tr>
+                <tr class="total-row">
+                    <td colspan="3" style="text-align: right; font-weight: bold;">Total (required):</td>
+                    <td id="total-required-points" style="font-weight: bold;">0/0</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    
+</div>
+
+<script>
+// Dashboard JavaScript
+let dashboardSessionState = {};
+
+// Load session state from localStorage
+function loadDashboardSessionState() {
+    const stored = localStorage.getItem("llmgrader_session");
+    if (stored) {
+        try {
+            dashboardSessionState = JSON.parse(stored);
+        } catch (e) {
+            console.error("Failed to parse session state:", e);
+            dashboardSessionState = {};
+        }
+    }
+}
+
+// Calculate points and completed parts for a question
+function calculateQuestionStatus(unitName, qtag, questionData) {
+    const sessionData = dashboardSessionState[unitName]?.[qtag];
+    const parts = questionData.parts || [];
+    
+    // Calculate total points
+    const totalPoints = parts.reduce((sum, part) => {
+        return sum + parseInt(part.points || 0, 10);
+    }, 0);
+    
+    // Check if any grading was attempted
+    let hasAttempts = false;
+    if (sessionData && sessionData.parts) {
+        hasAttempts = Object.keys(sessionData.parts).length > 0;
+    }
+    
+    if (!sessionData || !sessionData.parts) {
+        return {
+            completedParts: [],
+            earnedPoints: 0,
+            totalPoints: totalPoints,
+            isComplete: false,
+            hasAttempts: false
+        };
+    }
+    
+    // Check which parts are correct
+    const correctParts = [];
+    let earnedFromIndividual = 0;
+    
+    parts.forEach(part => {
+        const partLabel = part.part_label;
+        const partData = sessionData.parts[partLabel];
+        
+        if (partData && partData.grade_status === "pass") {
+            correctParts.push(partLabel);
+            earnedFromIndividual += parseInt(part.points || 0, 10);
+        }
+    });
+    
+    // Check if "all" was graded correct
+    let earnedFromAll = 0;
+    const allPartData = sessionData.parts["all"];
+    if (allPartData && allPartData.grade_status === "pass") {
+        earnedFromAll = totalPoints;
+    }
+    
+    // Final earned points is the maximum
+    const earnedPoints = Math.max(earnedFromIndividual, earnedFromAll);
+    
+    // Determine completed parts display
+    let completedPartsDisplay = [];
+    if (earnedFromAll === totalPoints) {
+        completedPartsDisplay = ["all"];
+    } else if (correctParts.length === parts.length && parts.length > 0) {
+        completedPartsDisplay = ["all"];
+    } else {
+        completedPartsDisplay = correctParts;
+    }
+    
+    return {
+        completedParts: completedPartsDisplay,
+        earnedPoints: earnedPoints,
+        totalPoints: totalPoints,
+        isComplete: earnedPoints === totalPoints && totalPoints > 0,
+        hasAttempts: hasAttempts
+    };
+}
+
+// Get CSS class for points cell based on earned/total/attempts
+function getPointsClass(earnedPoints, totalPoints, hasAttempts) {
+    if (earnedPoints === 0 && !hasAttempts) {
+        return 'points-none';
+    } else if (earnedPoints === 0 && hasAttempts) {
+        return 'points-attempted-zero';
+    } else if (earnedPoints > 0 && earnedPoints < totalPoints) {
+        return 'points-partial';
+    } else if (earnedPoints === totalPoints && totalPoints > 0) {
+        return 'points-full';
+    }
+    return '';
+}
+
+// Load and display unit data in the table
+async function loadDashboardUnit(unitName) {
+    if (!unitName) return;
+    
+    try {
+        const response = await fetch(`/unit/${unitName}`);
+        const data = await response.json();
+        
+        const tableBody = document.getElementById('dashboard-table-body');
+        tableBody.innerHTML = '';
+        
+        if (!data.qtags || data.qtags.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #888;">No questions in this unit.</td></tr>';
+            document.getElementById('total-all-points').textContent = '0/0';
+            document.getElementById('total-all-points').className = 'points-none';
+            document.getElementById('total-required-points').textContent = '0/0';
+            document.getElementById('total-required-points').className = 'points-none';
+            return;
+        }
+        
+        // Track totals
+        let totalAllEarned = 0;
+        let totalAllPossible = 0;
+        let totalRequiredEarned = 0;
+        let totalRequiredPossible = 0;
+        let hasAnyAttempts = false;
+        let hasAnyRequiredAttempts = false;
+        
+        // Build table rows
+        data.qtags.forEach(qtag => {
+            const questionData = data.items[qtag];
+            const status = calculateQuestionStatus(unitName, qtag, questionData);
+            const isRequired = questionData.grade === true;
+            
+            const row = document.createElement('tr');
+            
+            // Question column
+            const qtagCell = document.createElement('td');
+            qtagCell.textContent = qtag;
+            row.appendChild(qtagCell);
+            
+            // Required column
+            const requiredCell = document.createElement('td');
+            requiredCell.textContent = questionData.grade ? 'true' : 'false';
+            row.appendChild(requiredCell);
+            
+            // Completed Parts column
+            const completedCell = document.createElement('td');
+            completedCell.textContent = status.completedParts.length > 0 
+                ? status.completedParts.join(', ') 
+                : '—';
+            row.appendChild(completedCell);
+            
+            // Points column
+            const pointsCell = document.createElement('td');
+            pointsCell.textContent = `${status.earnedPoints}/${status.totalPoints}`;
+            const pointsClass = getPointsClass(status.earnedPoints, status.totalPoints, status.hasAttempts);
+            if (pointsClass) {
+                pointsCell.classList.add(pointsClass);
+            }
+            row.appendChild(pointsCell);
+            
+            tableBody.appendChild(row);
+            
+            // Update totals
+            totalAllEarned += status.earnedPoints;
+            totalAllPossible += status.totalPoints;
+            if (status.hasAttempts) hasAnyAttempts = true;
+            
+            if (isRequired) {
+                totalRequiredEarned += status.earnedPoints;
+                totalRequiredPossible += status.totalPoints;
+                if (status.hasAttempts) hasAnyRequiredAttempts = true;
+            }
+        });
+        
+        // Update total row
+        const totalAllCell = document.getElementById('total-all-points');
+        totalAllCell.textContent = `${totalAllEarned}/${totalAllPossible}`;
+        totalAllCell.className = getPointsClass(totalAllEarned, totalAllPossible, hasAnyAttempts);
+        
+        // Update required total row
+        const totalRequiredCell = document.getElementById('total-required-points');
+        totalRequiredCell.textContent = `${totalRequiredEarned}/${totalRequiredPossible}`;
+        totalRequiredCell.className = getPointsClass(totalRequiredEarned, totalRequiredPossible, hasAnyRequiredAttempts);
+        
+    } catch (error) {
+        console.error('Failed to load unit data:', error);
+        const tableBody = document.getElementById('dashboard-table-body');
+        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #f00;">Error loading data.</td></tr>';
+    }
+}
+
+// Wrap text to specified column width
+function wrapText(text, width = 80) {
+    if (!text) return '';
+    
+    const words = text.split(/\s+/);
+    const lines = [];
+    let currentLine = '';
+    
+    words.forEach(word => {
+        if ((currentLine + ' ' + word).length <= width) {
+            currentLine = currentLine ? currentLine + ' ' + word : word;
+        } else {
+            if (currentLine) lines.push(currentLine);
+            currentLine = word;
+        }
+    });
+    
+    if (currentLine) lines.push(currentLine);
+    return lines.join('\n');
+}
+
+// Generate human-readable text for submission
+function generateSubmissionText(unitName, unitData, questionDataMap) {
+    const lines = [];
+    lines.push(`Submission for Unit: ${unitName}`);
+    lines.push('='.repeat(80));
+    lines.push('');
+    
+    // Get required questions only
+    const requiredQtags = Object.keys(unitData).filter(qtag => {
+        const questionData = questionDataMap[qtag];
+        return questionData && questionData.grade === true;
+    });
+    
+    if (requiredQtags.length === 0) {
+        lines.push('No required questions in this unit.');
+        return lines.join('\n');
+    }
+    
+    requiredQtags.forEach(qtag => {
+        const questionData = questionDataMap[qtag];
+        const sessionData = unitData[qtag];
+        const status = calculateQuestionStatus(unitName, qtag, questionData);
+        
+        lines.push(`Question (${qtag})`);
+        lines.push('-'.repeat(80));
+        lines.push(`Points total: ${status.earnedPoints}/${status.totalPoints}`);
+        lines.push('');
+        
+        // Student solution - preserve original formatting
+        lines.push('Solution:');
+        if (sessionData.student_solution) {
+            lines.push(sessionData.student_solution);
+        } else {
+            lines.push('(No solution provided)');
+        }
+        lines.push('');
+        
+        // Parts
+        if (sessionData.parts) {
+            const partLabels = Object.keys(sessionData.parts);
+            partLabels.forEach(partLabel => {
+                const partData = sessionData.parts[partLabel];
+                lines.push(`Part '${partLabel}'`);
+                
+                // Grade status
+                let gradeStatus = 'ungraded';
+                if (partData.grade_status === 'pass') {
+                    gradeStatus = 'correct';
+                } else if (partData.grade_status === 'fail') {
+                    gradeStatus = 'incorrect';
+                } else if (partData.grade_status) {
+                    gradeStatus = partData.grade_status;
+                }
+                lines.push(`Grade status: ${gradeStatus}`);
+                
+                // Feedback
+                lines.push('Feedback:');
+                if (partData.feedback) {
+                    lines.push(wrapText(partData.feedback));
+                } else {
+                    lines.push('');
+                }
+                lines.push('');
+                
+                // Explanation
+                lines.push('Explanation:');
+                if (partData.explanation) {
+                    lines.push(wrapText(partData.explanation));
+                } else {
+                    lines.push('');
+                }
+                lines.push('');
+            });
+        }
+        
+        lines.push('');
+    });
+    
+    return lines.join('\n');
+}
+
+// Download submission as zip
+async function downloadSubmission() {
+    const unitName = document.getElementById('dashboard-unit-select').value;
+    
+    if (!unitName) {
+        alert('Please select a unit first.');
+        return;
+    }
+    
+    // Load session state
+    loadDashboardSessionState();
+    
+    const unitData = dashboardSessionState[unitName] || {};
+    
+    // Fetch unit data to get question metadata
+    try {
+        const response = await fetch(`/unit/${unitName}`);
+        const data = await response.json();
+        
+        if (!data.items) {
+            alert('No question data found for this unit.');
+            return;
+        }
+        
+        // Filter for required questions only
+        const requiredQtags = Object.keys(unitData).filter(qtag => {
+            const questionData = data.items[qtag];
+            return questionData && questionData.grade === true;
+        });
+        
+        if (requiredQtags.length === 0) {
+            alert('No required questions found in this unit.');
+            return;
+        }
+        
+        // Create filtered JSON with only required questions
+        const filteredData = {};
+        requiredQtags.forEach(qtag => {
+            filteredData[qtag] = unitData[qtag];
+        });
+        
+        // Generate JSON string
+        const jsonString = JSON.stringify(filteredData, null, 2);
+        
+        // Generate text file
+        const textContent = generateSubmissionText(unitName, filteredData, data.items);
+        
+        // Create zip file using JSZip
+        const zip = new JSZip();
+        zip.file(`submission_${unitName}.json`, jsonString);
+        zip.file(`submission_${unitName}.txt`, textContent);
+        
+        // Generate zip and download
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `submission_${unitName}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log(`Downloaded submission for unit: ${unitName}`);
+    } catch (error) {
+        console.error('Failed to generate submission:', error);
+        alert('Failed to generate submission. Please try again.');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async function() {
+    const unitSelect = document.getElementById('dashboard-unit-select');
+    
+    // Load session state
+    loadDashboardSessionState();
+    
+    // Fetch units from the server
+    try {
+        const response = await fetch('/units');
+        const units = await response.json();
+        
+        // Clear existing options
+        unitSelect.innerHTML = '';
+        
+        // Populate dropdown with units
+        units.forEach(unit => {
+            const option = document.createElement('option');
+            option.value = unit;
+            option.textContent = unit;
+            unitSelect.appendChild(option);
+        });
+        
+        // Set selected unit from sessionStorage
+        const savedUnit = sessionStorage.getItem('selectedUnit');
+        if (savedUnit && units.includes(savedUnit)) {
+            unitSelect.value = savedUnit;
+        } else if (units.length > 0) {
+            // Default to first unit if no saved value
+            unitSelect.value = units[0];
+        }
+        
+        // Load the selected unit's data
+        if (unitSelect.value) {
+            await loadDashboardUnit(unitSelect.value);
+        }
+        
+        // Handle unit dropdown changes
+        unitSelect.addEventListener('change', async function() {
+            sessionStorage.setItem('selectedUnit', unitSelect.value);
+            await loadDashboardUnit(unitSelect.value);
+        });
+        
+        // Handle download submission button
+        const downloadBtn = document.getElementById('download-submission-btn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', downloadSubmission);
+        }
+        
+        console.log('Dashboard loaded');
+    } catch (error) {
+        console.error('Failed to load units:', error);
+    }
+});
+</script>
+
+</body>
+</html>

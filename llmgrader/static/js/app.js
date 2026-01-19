@@ -199,6 +199,7 @@ async function loadUnits() {
     }
 
     dropdown.onchange = () => {
+        sessionStorage.setItem("selectedUnit", dropdown.value);
         loadUnit(dropdown.value);
     };
 }

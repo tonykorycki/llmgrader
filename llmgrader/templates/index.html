@@ -58,7 +58,7 @@
             </div>
 
             <div class="control-row">
-                <label for="student-file">Student File:</label>
+                <label for="student-file">Upload latex solution:</label>
                 <input type="file" id="student-file">
                 <button id="load-student-file" type="button">Load</button>
             </div>
@@ -122,6 +122,7 @@
                 Not graded
             </div>
             <div id="grade-points" class="grade-points"></div>
+            <a href="{{ url_for('api.dashboard') }}" class="dashboard-link">Dashboard</a>
         </div>
 
         <div id="grading-output">
