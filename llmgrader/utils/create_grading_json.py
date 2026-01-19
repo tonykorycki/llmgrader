@@ -41,6 +41,29 @@ def compare_qtags(
     
     return
 
+import re
+
+def collapse_latex_newlines(src: str) -> str:
+    # 1. Protect paragraph breaks (blank lines) by marking them
+    #    We turn "\n\n+" into a special token.
+    PARA = "<<<PARA_BREAK>>>"
+    src = re.sub(r'\n\s*\n+', f'{PARA}', src)
+
+    # 2. Protect newlines directly before \begin (environment starts)
+    #    We mark "\n\s*\begin" so we can restore it later.
+    BEGIN = "<<<BEGIN_BREAK>>>"
+    src = re.sub(r'\n\s*(?=\\begin)', BEGIN, src)
+
+    # 3. For all remaining newlines followed by optional whitespace + text,
+    #    replace the newline + whitespace with a single space.
+    src = re.sub(r'\n\s*', ' ', src)
+
+    # 4. Restore the protected breaks
+    src = src.replace(BEGIN, '\n')
+    src = src.replace(PARA, '\n\n')
+
+    return src
+
 class PlainText(BaseModel):
     text: str
 
@@ -56,13 +79,14 @@ def openai_convert(model: str, latex: str) -> str:
     Requirements:
     - Remove LaTeX commands.
     - Preserve mathematical meaning using plain text (e.g., "x^2 + y^2").
-    - Keep paragraph breaks using newline characters.
+    - Preserve paragraph breaks, displayed equations, and code blocks.
+    - When not in a code block or displayed equation, do NOT preserve indentation or mid‑sentence newlines from the LaTeX source.
     - Omit figures, images, and environments that cannot be represented in text.
     - Do NOT add commentary, explanations, or JSON.
     - Output ONLY the converted ASCII text.
                                     
     Latex to convert:
-    -------
+    ------- 
     {latex}
     """).format(latex=latex)
 
