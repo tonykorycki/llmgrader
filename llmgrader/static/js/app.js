@@ -194,8 +194,15 @@ async function loadUnits() {
     });
 
     if (units.length > 0) {
-        dropdown.value = units[0];
-        loadUnit(units[0]);
+        // Check if there's a saved unit selection
+        const savedUnit = sessionStorage.getItem("selectedUnit");
+        if (savedUnit && units.includes(savedUnit)) {
+            dropdown.value = savedUnit;
+            loadUnit(savedUnit);
+        } else {
+            dropdown.value = units[0];
+            loadUnit(units[0]);
+        }
     }
 
     dropdown.onchange = () => {
