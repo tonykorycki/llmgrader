@@ -448,17 +448,15 @@ class Grader:
                 temperature=temperature,
                 timeout=timeout
             )
-        
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(call_openai_api)
         
         try:
             additional_timeout = 5.0  # seconds
             total_timeout = timeout + additional_timeout
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(call_openai_api)
-                response = future.result(timeout=total_timeout)
-
+            response = future.result(timeout=total_timeout)
             grade = response.output_parsed.model_dump()
-            log_std('Received response from OpenAI.')
+            log_std("Received response from OpenAI.")
 
         except ThreadTimeoutError:
             # Thread timed out
@@ -491,7 +489,11 @@ class Grader:
                 'result': 'error', 
                 'full_explanation': f'OpenAI API call failed: {str(e)}', 
                 'feedback': 'There was an error while trying to grade the solution.'}
-        
+        finally:
+            # IMPORTANT: do NOT overwrite grade here
+            executor.shutdown(wait=False, cancel_futures=True)
+
+
         # ---------------------------------------------------------
         # 4. Save raw response to scratch/resp.json
         # ---------------------------------------------------------
