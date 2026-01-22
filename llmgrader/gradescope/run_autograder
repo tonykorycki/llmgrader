@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /autograder
+cp /autograder/submission/* /autograder/source
+
+cd /autograder/source
 
 # If you add dependencies later, uncomment:
 # pip install -r requirements.txt

@@ -1,8 +1,7 @@
 import json
 import pytest
 from pathlib import Path
-from llmgrader.gradescope.autograde import load_grading_schema, compute_scores
-
+from llmgrader.gradescope.autograde import load_grade_schema, compute_scores
 
 # Path to fixtures
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -12,7 +11,7 @@ def test_compute_scores_all_pass():
     """Test that all passing submissions get full score."""
     # Load grading schema
     schema_path = FIXTURES_DIR / "grade_schema.xml"
-    schema_questions = load_grading_schema(schema_path)
+    schema_questions = load_grade_schema(schema_path)
     
     # Load submission JSON
     submission_path = FIXTURES_DIR / "submission_full.json"
@@ -50,7 +49,7 @@ def test_missing_question():
     """Test that missing questions receive 0 points."""
     # Load grading schema
     schema_path = FIXTURES_DIR / "grade_schema.xml"
-    schema_questions = load_grading_schema(schema_path)
+    schema_questions = load_grade_schema(schema_path)
     
     # Load submission JSON (only Q1, Q2 missing)
     submission_path = FIXTURES_DIR / "submission_missing_question.json"
@@ -88,7 +87,7 @@ def test_missing_part():
     """Test that missing parts within a question receive 0 points."""
     # Load grading schema
     schema_path = FIXTURES_DIR / "grade_schema.xml"
-    schema_questions = load_grading_schema(schema_path)
+    schema_questions = load_grade_schema(schema_path)
     
     # Load submission JSON (Q2 with only p1, p2 missing)
     submission_path = FIXTURES_DIR / "submission_missing_part.json"
@@ -119,7 +118,7 @@ def test_fail_cases():
     """Test that failing submissions receive 0 points."""
     # Load grading schema
     schema_path = FIXTURES_DIR / "grade_schema.xml"
-    schema_questions = load_grading_schema(schema_path)
+    schema_questions = load_grade_schema(schema_path)
     
     # Load submission JSON (Q1 fails, Q2.p1 passes, Q2.p2 fails)
     submission_path = FIXTURES_DIR / "submission_fail.json"

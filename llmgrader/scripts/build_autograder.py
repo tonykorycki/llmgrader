@@ -32,7 +32,7 @@ def main():
     out_dir.mkdir()
 
     # Copy template files
-    template_files = ["autograde.py", "run_autograder", "requirements.txt"]
+    template_files = ["autograde.py", "run_autograder", "requirements.txt", "setup.sh"]
     for fname in template_files:
         src = template_dir / fname
         dst = out_dir / fname
@@ -48,8 +48,8 @@ def main():
         run_file.chmod(0o755)
 
 
-    # Copy the local grading schema
-    shutil.copy(schema_path, out_dir / "grading_schema.xml")
+    # Copy the local grade schema
+    shutil.copy(schema_path, out_dir / "grade_schema.xml")
 
     # Create autograder.zip
     zip_path = cwd / "autograder.zip"
@@ -58,7 +58,7 @@ def main():
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for path in out_dir.rglob("*"):
-            # Store paths relative to the current directory
-            z.write(path, path.relative_to(cwd))
+            # Write paths relative to autograder_dir so they appear at ZIP root
+            z.write(path, path.relative_to(out_dir))
 
     print(f"Created autograder.zip in {cwd}")

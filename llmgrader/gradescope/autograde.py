@@ -6,18 +6,17 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import sys
 
-# Detect if running inside Gradescope
-if Path("/autograder").exists() and os.name != "nt":
-    AG_ROOT = Path("/autograder")
+
+if Path("/autograder").exists():
+    # If running in Gradescope environment, we use /autograder paths
+    SUBMISSION_DIR = Path("/autograder/submission")
+    RESULTS_PATH = Path("/autograder/results/results.json")
+    SCHEMA_PATH = Path("/autograder/source/grade_schema.xml")
 else:
     # Local testing fallback
-    AG_ROOT = Path.cwd()
-
-SUBMISSION_DIR = AG_ROOT / "submission"
-RESULTS_PATH = AG_ROOT / "results" / "results.json"
-SCHEMA_PATH = AG_ROOT / "grading_schema.xml"
-
-
+    SUBMISSION_DIR = Path.cwd() / "submission"
+    RESULTS_PATH = Path.cwd() / "results" / "results.json"
+    SCHEMA_PATH = Path.cwd() / "grade_schema.xml"
 
 def find_submission_json() -> Path:
     """
@@ -48,9 +47,9 @@ def find_submission_json() -> Path:
     return json_files[0]
 
 
-def load_grading_schema(schema_path: Path):
+def load_grade_schema(schema_path: Path):
     """
-    Parse grading_schema.xml into a list of question dicts:
+    Parse grade_schema.xml into a list of question dicts:
     [
       {
         "id": "1",
@@ -223,7 +222,7 @@ def main():
         with open(submission_json_path, "r") as f:
             submission_json = json.load(f)
 
-        schema_questions = load_grading_schema(SCHEMA_PATH)
+        schema_questions = load_grade_schema(SCHEMA_PATH)
         results = compute_scores(schema_questions, submission_json)
         write_results(results)
 
