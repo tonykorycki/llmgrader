@@ -163,3 +163,8 @@ scratch/
 
 # Questions directory
 soln_repo/
+local_test/
+
+# Allow test fixtures even though *.json and *.xml are ignored
+!tests/fixtures/*.json
+!tests/fixtures/*.xml
