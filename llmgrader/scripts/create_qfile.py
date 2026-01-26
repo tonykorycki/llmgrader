@@ -76,17 +76,20 @@ def parse_xml_file(xml_file):
         xml_file: Path to the XML file
         
     Returns:
-        List of dictionaries with 'qtag', 'text', and 'solution' keys
+        Tuple of (unit_title, questions) where questions is a list of dictionaries
     """
     tree = ET.parse(xml_file)
     root = tree.getroot()
+    
+    # Extract unit title from root element
+    unit_title = root.get('title', 'Questions')
     
     questions = []
     for question in root.findall('question'):
         qtag = question.get('qtag', 'Untitled Question')
         
-        # Find the text element
-        text_elem = question.find('text')
+        # Find the question_text element
+        text_elem = question.find('question_text')
         if text_elem is not None:
             # Extract CDATA content
             text_content = text_elem.text if text_elem.text else ''
@@ -111,24 +114,28 @@ def parse_xml_file(xml_file):
             'solution': solution_content
         })
     
-    return questions
+    return unit_title, questions
 
 
-def generate_html(questions, output_file, include_solutions=False):
+def generate_html(questions, output_file, unit_title='Questions', include_solutions=False):
     """
     Generate HTML file from questions.
     
     Args:
         questions: List of question dictionaries
         output_file: Path to the output HTML file
+        unit_title: Title of the unit (from XML)
         include_solutions: Whether to include solutions in the output
     """
+    # Set page title based on whether solutions are included
+    page_title = f"{unit_title} Solutions" if include_solutions else f"{unit_title} Questions"
+    
     html_parts = [
         '<!DOCTYPE html>',
         '<html>',
         '<head>',
         '    <meta charset="UTF-8">',
-        '    <title>Questions</title>',
+        f'    <title>{page_title}</title>',
         '    <style>',
         '        body {',
         '            font-family: Arial, sans-serif;',
@@ -164,12 +171,12 @@ def generate_html(questions, output_file, include_solutions=False):
         '    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>',
         '</head>',
         '<body>',
-        '    <h1>Questions</h1>',
+        f'    <h1>{page_title}</h1>',
     ]
     
-    for question in questions:
+    for i, question in enumerate(questions, start=1):
         html_parts.append('    <div class="question">')
-        html_parts.append(f'        <h2>{question["qtag"]}</h2>')
+        html_parts.append(f'        <h2>Question {i}. {question["qtag"]}</h2>')
         html_parts.append(f'{question["text"]}')
         
         # Add solution if requested and available
@@ -298,10 +305,10 @@ def main():
             output_file = base_name + '.html'
     
     # Parse XML and extract questions
-    questions = parse_xml_file(args.input)
+    unit_title, questions = parse_xml_file(args.input)
     
     # Generate HTML output
-    generate_html(questions, output_file, include_solutions=args.soln)
+    generate_html(questions, output_file, unit_title=unit_title, include_solutions=args.soln)
     
     print(f'Successfully created {output_file} with {len(questions)} question(s).')
     
