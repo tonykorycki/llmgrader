@@ -2,15 +2,50 @@ import shutil
 import zipfile
 from pathlib import Path
 import sys
+import argparse
 
 def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='Build a Gradescope autograder zip file.'
+    )
+    parser.add_argument(
+        '--schema',
+        type=str,
+        default=None,
+        help='Path to the XML schema file (e.g., unit1_basic_logic.xml). If not specified, searches for an XML file in the current directory.'
+    )
+    args = parser.parse_args()
+
     # Current working directory (unitX/prob)
     cwd = Path.cwd()
-    schema_path = cwd / "grade_schema.xml"
-
-    if not schema_path.exists():
-        print("Error: grade_schema.xml not found in current directory.")
-        sys.exit(1)
+    
+    # Determine schema path
+    if args.schema:
+        schema_path = Path(args.schema)
+        if not schema_path.is_absolute():
+            schema_path = cwd / schema_path
+        
+        if not schema_path.exists():
+            print(f"Error: Specified schema file not found: {schema_path}")
+            sys.exit(1)
+    else:
+        # Find XML files in current directory
+        xml_files = list(cwd.glob("*.xml"))
+        
+        if len(xml_files) == 0:
+            print("Error: No XML files found in current directory.")
+            print("Please specify a schema file with --schema option.")
+            sys.exit(1)
+        elif len(xml_files) > 1:
+            print("Error: Multiple XML files found in current directory:")
+            for f in xml_files:
+                print(f"  - {f.name}")
+            print("Please specify which one to use with --schema option.")
+            sys.exit(1)
+        
+        schema_path = xml_files[0]
+        print(f"Using schema file: {schema_path.name}")
 
     # Locate the template directory inside the llmgrader package
     try:

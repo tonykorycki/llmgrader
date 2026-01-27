@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import re
@@ -14,36 +15,58 @@ if Path("/autograder").exists():
     SCHEMA_PATH = Path("/autograder/source/grade_schema.xml")
 else:
     # Local testing fallback
-    SUBMISSION_DIR = Path.cwd() / "submission"
-    RESULTS_PATH = Path.cwd() / "results" / "results.json"
-    SCHEMA_PATH = Path.cwd() / "grade_schema.xml"
+    SUBMISSION_DIR = (Path.cwd().parent / "submission").resolve()
+    RESULTS_PATH = (Path.cwd() / "results" / "results.json").resolve()
+    SCHEMA_PATH = (Path.cwd() / "grade_schema.xml").resolve()
 
-def find_submission_json() -> Path:
+def find_submission_json(verbose: bool = False) -> Path:
     """
     Locate submission_<unit>.json.
     Supports:
       - a zip containing submission_*.json
       - a raw submission_*.json file
+    
+    Args:
+        verbose: If True, print information about file search
     """
+    if verbose:
+        print(f"Searching for submission files in: {SUBMISSION_DIR}")
+    
     # Look for a zip file
     zips = list(SUBMISSION_DIR.glob("*.zip"))
     if zips:
         zip_path = zips[0]
+        if verbose:
+            print(f"Found zip file: {zip_path}")
         with zipfile.ZipFile(zip_path, "r") as zf:
             candidates = [
                 name for name in zf.namelist()
                 if re.match(r"submission_.*\.json$", os.path.basename(name))
             ]
             if not candidates:
+                if verbose:
+                    print(f"No submission_*.json found inside zip. Files in zip: {zf.namelist()}")
                 raise FileNotFoundError("No submission_*.json found inside zip.")
             target = candidates[0]
+            if verbose:
+                print(f"Found submission file in zip: {target}")
             zf.extract(target, SUBMISSION_DIR)
-            return SUBMISSION_DIR / target
+            extracted_path = SUBMISSION_DIR / target
+            if verbose:
+                print(f"Extracted to: {extracted_path}")
+            return extracted_path
 
     # Otherwise look directly
     json_files = list(SUBMISSION_DIR.glob("submission_*.json"))
     if not json_files:
+        if verbose:
+            print(f"No submission_*.json found in submission directory.")
+            all_files = list(SUBMISSION_DIR.glob("*"))
+            print(f"Files in directory: {[f.name for f in all_files]}")
         raise FileNotFoundError("No submission_*.json found in submission directory.")
+    
+    if verbose:
+        print(f"Found submission file: {json_files[0]}")
     return json_files[0]
 
 
@@ -247,8 +270,20 @@ def write_results(results):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description='Grade student submissions using XML schema'
+    )
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Enable verbose output for debugging'
+    )
+    args = parser.parse_args()
+    
     try:
-        submission_json_path = find_submission_json()
+        submission_json_path = find_submission_json(verbose=args.verbose)
+        if args.verbose:
+            print(f"Loading submission from: {submission_json_path}")
         with open(submission_json_path, "r") as f:
             submission_json = json.load(f)
 

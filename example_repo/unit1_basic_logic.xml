@@ -162,13 +162,13 @@
 
             It is acceptable if students register the output y instead of computing it 
             purely combinationally. Either approach is fine as long as the pipeline 
-            timing is correct and only one multiplication is required per cycle.
+            timing is correct.
 
-            A common mistake is failing to respect the resource constraint: no clock 
-            cycle may require two multiplications unless they are parallelizable. 
-            For example, computing x*x and b*x in the same cycle is allowed only if 
-            they are in separate parallel multipliers; otherwise the student must 
-            schedule them in different cycles.
+            A common mistake is failing to respect the timing constraint
+            with the multiplier: Multiple multipliers in the same clock cycle
+            are allowed, but must be paralleizable.  For example, it is
+            acceptable to compute x*x and b*x in the same clock cycle,
+            but computing a*x*x from x in one cycle is not allowed.
 
             Another common mistake is using a value such as x across multiple cycles 
             without storing the delayed version. If a signal is needed in a later 
