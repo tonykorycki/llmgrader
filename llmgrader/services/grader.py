@@ -258,9 +258,9 @@ class Grader:
             if os.path.exists(units_csv_path):
                 local_repo = c
                 log.write(f'Found units.csv in candidate directory: {c}\n')
+                break
             else:
                 log.write(f'No units.csv in candidate directory: {c}\n')
-                break
         
         if local_repo is None:
             log.write('No local repository with units.csv found  in any candidate directory.\n')
