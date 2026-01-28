@@ -52,12 +52,15 @@ class LLMClient:
         ----------
         api_key : str
             API key for the provider
-        provider : str
-            Provider type: "openai" or "huggingface". Must be specified.
+        provider : str, optional
+            Provider type: "openai" or "huggingface". If None, defaults to "openai".
         """
         self.api_key = api_key
         if provider is None:
-            raise ValueError("Provider must be specified (either 'openai' or 'huggingface')")
+            # Fallback to 'openai' for robustness, but warn in logs
+            import warnings
+            warnings.warn("Provider not specified, defaulting to 'openai'.")
+            provider = "openai"
         self.provider = provider
         
         if self.provider == "openai":
