@@ -564,7 +564,7 @@ class Grader:
         
 
         # Create the LLM client
-        # Provider can be passed per-request (preferred) or will fall back to config.PROVIDER
+        # Provider must be passed per-request (from UI)
         if api_key is None:
             grade = {
                 'result': 'error', 

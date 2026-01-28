@@ -160,6 +160,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const modelInput = document.getElementById("model-input");
     const modelSelectContainer = document.getElementById("model-select-container");
     const modelInputContainer = document.getElementById("model-input-container");
+    const hfKeyContainer = document.getElementById("hf-key-container");
+    const hfKeyInput = document.getElementById("hfApiKeyInput");
 
     // Load saved provider and key
     const savedProvider = localStorage.getItem("llm_provider");
@@ -167,35 +169,57 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const savedKey = localStorage.getItem("llm_api_key");
     if (savedKey) input.value = savedKey;
+    const savedHfKey = localStorage.getItem("llm_hf_api_key");
+    if (savedHfKey && hfKeyInput) hfKeyInput.value = savedHfKey;
 
-    // Load saved model (either from select or custom input)
-    const savedModel = localStorage.getItem("llm_model");
-    if (savedModel) {
-        // If savedModel matches one of the options, select it, else populate custom input
-        let matched = false;
-        if (modelSelect) {
-            for (let i = 0; i < modelSelect.options.length; i++) {
-                if (modelSelect.options[i].value === savedModel) {
-                    modelSelect.value = savedModel;
-                    matched = true;
-                    break;
+    // Helper: get model key for provider
+    function getModelKey(provider) {
+        return provider === 'huggingface' ? 'llm_model_huggingface' : 'llm_model_openai';
+    }
+
+    // Restore model for current provider
+    function restoreModelForProvider(provider) {
+        const key = getModelKey(provider);
+        let model = localStorage.getItem(key);
+        if (provider === 'openai' && !model) model = 'gpt-4.1-mini';
+        if (provider === 'openai') {
+            // Set dropdown, clear input
+            let matched = false;
+            if (modelSelect) {
+                for (let i = 0; i < modelSelect.options.length; i++) {
+                    if (modelSelect.options[i].value === model) {
+                        modelSelect.value = model;
+                        matched = true;
+                        break;
+                    }
                 }
             }
-        }
-        if (!matched && modelInput) {
-            modelInput.value = savedModel;
+            if (!matched && modelSelect) modelSelect.value = 'gpt-4.1-mini';
+            if (modelInput) modelInput.value = '';
+        } else if (provider === 'huggingface') {
+            if (modelInput) modelInput.value = model || '';
         }
     }
+
+    // On load, restore model for current provider
+    restoreModelForProvider(providerSelect.value);
 
     // Initialize model input/select visibility based on provider
     function updateModelVisibility(provider) {
         if (provider === 'openai') {
             if (modelSelectContainer) modelSelectContainer.style.display = '';
-            if (modelInputContainer) modelInputContainer.style.display = '';
-        } else {
-            // For non-OpenAI providers hide GPT dropdown and show custom input
+            if (modelInputContainer) modelInputContainer.style.display = 'none';
+            if (hfKeyContainer) hfKeyContainer.style.display = 'none';
+        } else if (provider === 'huggingface') {
+            // For Hugging Face show custom input and HF key, hide GPT dropdown
             if (modelSelectContainer) modelSelectContainer.style.display = 'none';
             if (modelInputContainer) modelInputContainer.style.display = '';
+            if (hfKeyContainer) hfKeyContainer.style.display = '';
+        } else {
+            // default: hide custom input
+            if (modelSelectContainer) modelSelectContainer.style.display = '';
+            if (modelInputContainer) modelInputContainer.style.display = 'none';
+            if (hfKeyContainer) hfKeyContainer.style.display = 'none';
         }
     }
 
@@ -206,40 +230,50 @@ document.addEventListener("DOMContentLoaded", () => {
         const prov = e.target.value;
         localStorage.setItem("llm_provider", prov);
         updateModelVisibility(prov);
+        restoreModelForProvider(prov);
     });
 
-    // Sync model select -> custom input and persist
+    // Sync model select and persist for OpenAI only
     if (modelSelect) {
         modelSelect.addEventListener('change', (e) => {
             const v = e.target.value;
-            if (modelInput) modelInput.value = v;
-            localStorage.setItem("llm_model", v);
+            if (modelInput) modelInput.value = '';
+            localStorage.setItem(getModelKey('openai'), v);
         });
     }
 
-    // Persist custom model input
+    // Persist custom model input for HF only
     if (modelInput) {
         modelInput.addEventListener('input', (e) => {
-            localStorage.setItem("llm_model", e.target.value.trim());
+            localStorage.setItem(getModelKey('huggingface'), e.target.value.trim());
         });
     }
 
     saveBtn.addEventListener("click", () => {
         const key = input.value.trim();
         const prov = providerSelect.value;
+        const hfKey = hfKeyInput ? hfKeyInput.value.trim() : "";
         if (prov) {
             localStorage.setItem("llm_provider", prov);
         }
         if (key) {
             localStorage.setItem("llm_api_key", key);
-            alert("API key and provider saved in your browser.");
-        } else {
-            alert("Provider saved.");
         }
+        if (hfKey) {
+            localStorage.setItem("llm_hf_api_key", hfKey);
+        }
+
+        alert("API keys and provider saved in your browser.");
     });
 });
 
 function getApiKey() {
+    // Return the API key for the currently selected provider
+    const provEl = document.getElementById("providerSelect");
+    const prov = provEl ? provEl.value : (localStorage.getItem("llm_provider") || "openai");
+    if (prov === 'huggingface') {
+        return localStorage.getItem("llm_hf_api_key") || "";
+    }
     return localStorage.getItem("llm_api_key") || "";
 }
 
@@ -517,7 +551,6 @@ async function gradeCurrentQuestion() {
     const selectedPart = partSelect.value;
 
     const apiKey = getApiKey();
-    const provider = getProvider();
     if (!apiKey) {
         alert("Please set your API key first.");
         return;
@@ -530,9 +563,13 @@ async function gradeCurrentQuestion() {
     gradeBtn.textContent = "Grading...";
 
     // prefer custom model input if populated, else selected model
-    const modelInputVal = (document.getElementById("model-input") || {}).value || "";
-    const modelSelectVal = (document.getElementById("model-select") || {}).value || "";
-    const model = modelInputVal.trim() || modelSelectVal;
+    let model = '';
+    const provider = getProvider();
+    if (provider === 'openai') {
+        model = (document.getElementById("model-select") || {}).value || 'gpt-4.1-mini';
+    } else if (provider === 'huggingface') {
+        model = (document.getElementById("model-input") || {}).value || '';
+    }
 
     const resp = await fetch("/grade", {
         method: "POST",

@@ -27,10 +27,9 @@ except ImportError:
     HUGGINGFACE_AVAILABLE = False
 
 try:
-    from llmgrader.config import PROVIDER, HF_API_URL, HF_DEFAULT_MODEL
+    from llmgrader.config import HF_API_URL, HF_DEFAULT_MODEL
 except ImportError:
     # Fallback defaults if config doesn't exist yet
-    PROVIDER = "openai"
     HF_API_URL = "https://router.huggingface.co/models/{model}/v1/chat/completions"
     HF_DEFAULT_MODEL = "meta-llama/Llama-3.1-70B-Instruct"
 
@@ -53,11 +52,13 @@ class LLMClient:
         ----------
         api_key : str
             API key for the provider
-        provider : str, optional
-            Provider type: "openai" or "huggingface". If None, uses config.PROVIDER
+        provider : str
+            Provider type: "openai" or "huggingface". Must be specified.
         """
         self.api_key = api_key
-        self.provider = provider if provider is not None else PROVIDER
+        if provider is None:
+            raise ValueError("Provider must be specified (either 'openai' or 'huggingface')")
+        self.provider = provider
         
         if self.provider == "openai":
             if not OPENAI_AVAILABLE:

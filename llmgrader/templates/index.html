@@ -33,11 +33,20 @@
         <select id="providerSelect" class="provider-select">
             <option value="openai">OpenAI</option>
             <option value="huggingface">HuggingFace</option>
-            <option value="generic">Generic</option>
         </select>
 
-        <label for="apiKeyInput" class="api-key-label">API Key</label>
-        <input id="apiKeyInput" type="password" placeholder="API Key" class="key-box">
+        <div class="key-stack">
+            <div class="key-row">
+                <label for="apiKeyInput" class="api-key-label">OpenAI API Key</label>
+                <input id="apiKeyInput" type="password" placeholder="API Key" class="key-box">
+            </div>
+            <div id="hf-key-container" style="display:none;">
+                <div class="key-row">
+                    <label for="hfApiKeyInput" class="hf-api-key-label">HF API Key</label>
+                    <input id="hfApiKeyInput" type="password" placeholder="HuggingFace API Key" class="key-box">
+                </div>
+            </div>
+        </div>
         <button id="saveKeyBtn" class="save-btn">Save</button>
     </div>
 </div>
@@ -116,8 +125,8 @@
             </span>
 
             <span id="model-input-container" style="display:none;">
-                <label for="model-input" class="model-input-label">Model (custom):</label>
-                <input id="model-input" type="text" placeholder="Enter model id or deployment" class="model-input" />
+                <label for="model-input" class="model-input-label">Model:</label>
+                <input id="model-input" type="text" placeholder="Model id or deployment" class="model-input" />
             </span>
 
             <label for="timeout-input" class="timeout-label">Timeout (s):</label>
