@@ -11,3 +11,7 @@ This section contains documentation for instructors and administrators who manag
 You’ll find guidance on configuring the grader, enabling password protection, reviewing logs, exporting submissions, and maintaining a smooth workflow for your course.
 
 Use the pages in this section to set up and operate the grader confidently throughout the semester.
+
+---
+
+Go to: [Package configuration](./pkgconfig.md)

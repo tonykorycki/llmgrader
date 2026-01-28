@@ -1,11 +1,11 @@
 ---
 title:  Solution Package Configuration
 parent: Administrator Guide
-nav_order: 1
+nav_order: 2
 has_children: false
 ---
 
-# Solution Package Configuration (`llmgrader_config.xml`)
+# Solution Package Configuration
 
 ## Solution Package Overview 
 
@@ -48,7 +48,7 @@ This is exactly what the admin upload page expects.
 
 ---
 
-## 🧭 Purpose of `llmgrader_config.xml`
+## Grader configuration file `llmgrader_config.xml`
 
 Generally, we expect that the course solutions are in some file system,
 typically a GitHub repository, although any folder system can be used.
