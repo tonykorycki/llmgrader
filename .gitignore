@@ -174,3 +174,9 @@ example_repo/**/*.html
 example_repo/**/*.pdf
 # BUT allow XML files inside example_repo
 !example_repo/**/*.xml
+
+example_repo/soln_package/
+example_repo/*.zip
+**/example_repo/autograder
+**/example_repo/autograder/
+

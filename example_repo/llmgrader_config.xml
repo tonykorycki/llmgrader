@@ -1,0 +1,20 @@
+<llmgrader>
+  <course>
+    <name>ECE-GY 9483 Hardware Design</name>
+    <semester>Spring 2026</semester>
+  </course>
+
+  <units>
+    <unit>
+      <name>unit1_basic_logic</name>
+      <source>unit1/basic_logic.xml</source>
+      <destination>unit1_basic_logic.xml</destination>
+    </unit>
+
+    <unit>
+      <name>unit2_numbers</name>
+      <source>unit2/numbers.xml</source>
+      <destination>unit2_numbers.xml</destination>
+    </unit>
+  </units>
+</llmgrader>

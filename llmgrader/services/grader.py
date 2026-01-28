@@ -110,9 +110,7 @@ def clean_cdata(text: str) -> str:
 
 class Grader:
     def __init__(self, 
-                 questions_root : str ="questions", 
                  scratch_dir : str ="scratch",
-                 remote_repo : str | None = None,
                  local_repo : str | None = None
                  ):
         """
@@ -120,19 +118,12 @@ class Grader:
 
         Parameters
         ----------
-        questions_root: str
-            Path to the root directory containing question units.
         scratch_dir: str
             Path to the scratch directory for temporary files.
-        remote_repo: str | None
-            URL of the remote git repository containing questions.
-            If None, no repository is loaded.
         local_repo: str | None
             Path to a local test repository for questions.
         """
-        self.questions_root = questions_root
         self.scratch_dir = scratch_dir
-        self.remote_repo = remote_repo
         self.local_repo = local_repo
 
         # Initialize units dictionary
@@ -180,9 +171,14 @@ class Grader:
         # Get the parent directory for the local repo
         parent_repo = self.get_local_repo_parent_path()
 
+        # Helper function to remove read-only attributes
+        def remove_readonly(func, path, excinfo):
+            os.chmod(path, 0o666)
+            func(path)
+
         # Ensure the repo directory exists (or clear it)
         if os.path.exists(parent_repo):
-            shutil.rmtree(parent_repo)
+            shutil.rmtree(parent_repo, onerror=remove_readonly)
         os.makedirs(parent_repo, exist_ok=True)
 
         # 3. Unzip into local_repo
@@ -198,6 +194,25 @@ class Grader:
             # Catch-all for unexpected issues
             print(f"Unexpected error while extracting ZIP: {e}")
             return {"error": "Failed to extract ZIP file."}, 500
+        
+        # 4. Reload units from the uploaded solution package
+        self.local_repo = parent_repo
+        print(f"Set local_repo to {parent_repo}")
+        
+        # Discover units from llmgrader_config.xml
+        try:
+            self.discover_units()
+            print(f"Units discovered successfully")
+        except Exception as e:
+            print(f"Failed to discover units: {e}")
+            return {"error": f"Failed to load units from uploaded package: {e}"}, 400
+        
+        # Verify that units were loaded
+        if not self.units:
+            print("No units found in uploaded package")
+            return {"error": "No valid units found in uploaded package. Please check llmgrader_config.xml."}, 400
+        
+        print(f"Loaded {len(self.units)} unit(s): {list(self.units.keys())}")
         
         return {"status": "ok"}
 
@@ -226,16 +241,6 @@ class Grader:
             local_repo = os.path.join(os.getcwd(), self.local_repo)
             log.write('Using local test repository from: ' + local_repo + '\n')
 
-        elif self.remote_repo is not None:
-            # Load the git repo if specified
-            log.write('Loading questions repository from: ' + self.remote_repo + '\n')
-            local_repo = os.path.join(parent_repo, "soln_repo")
-            try:
-                load_from_repo(self.remote_repo, target_dir=local_repo)
-            except Exception as e:
-                log.write('Failed to load git repository: ' + str(e) + '\n')
-                local_repo = None
-            log.write('Git repository loaded into: ' + local_repo + '\n')
         else:
             log.write('No remote repository specified. Using local files only.\n')
             local_repo = None
@@ -251,36 +256,66 @@ class Grader:
             # Otherwise, just use the local_repo directory
             candidates = [local_repo]
 
-        # Look for the units.csv file in the local_repo directory
+        # Look for the llmgrader_config.xml file in the local_repo directory
         local_repo = None
         for c in candidates:
-            units_csv_path = os.path.join(c, "units.csv")
-            if os.path.exists(units_csv_path):
+            llmgrader_config_path = os.path.join(c, "llmgrader_config.xml")
+            if os.path.exists(llmgrader_config_path):
                 local_repo = c
-                log.write(f'Found units.csv in candidate directory: {c}\n')
-            else:
-                log.write(f'No units.csv in candidate directory: {c}\n')
+                log.write(f'Found llmgrader_config.xml in candidate directory: {c}\n')
                 break
+            else:
+                log.write(f'No llmgrader_config.xml in candidate directory: {c}\n')
+                
         
         if local_repo is None:
-            log.write('No local repository with units.csv found  in any candidate directory.\n')
+            log.write('No local repository with llmgrader_config.xml found in any candidate directory.\n')
             self.units = {}
             log.close()
             return
         
-        # Check if has required columns
-        units_df = pd.read_csv(units_csv_path)
-        required = {"unit_name", "xml_path"}
-        if not required.issubset(units_df.columns):
-            missing = required - set(units_df.columns)
-            log.write(f"units.csv is missing required columns: {missing}\n")
+        # Parse llmgrader_config.xml
+        llmgrader_config_path = os.path.join(local_repo, "llmgrader_config.xml")
+        try:
+            config_tree = ET.parse(llmgrader_config_path)
+            config_root = config_tree.getroot()
+            log.write(f'Successfully parsed llmgrader_config.xml\n')
+        except Exception as e:
+            log.write(f'Failed to parse llmgrader_config.xml: {e}\n')
             self.units = {}
             log.close()
             return
         
-        # Get the columns as lists        
-        self.units_list = units_df['unit_name'].tolist()
-        self.xml_path_list = units_df['xml_path'].tolist()
+        # Extract units from config
+        units_elem = config_root.find('units')
+        if units_elem is None:
+            log.write('No <units> section found in llmgrader_config.xml\n')
+            self.units = {}
+            log.close()
+            return
+        
+        unit_list = units_elem.findall('unit')
+        if not unit_list:
+            log.write('No <unit> elements found in llmgrader_config.xml\n')
+            self.units = {}
+            log.close()
+            return
+        
+        # Build lists of unit names and XML paths from config
+        self.units_list = []
+        self.xml_path_list = []
+        
+        for unit in unit_list:
+            name = unit.findtext('name')
+            destination = unit.findtext('destination')
+            
+            if not name or not destination:
+                log.write(f'Skipping unit: missing <name> or <destination> element\n')
+                continue
+            
+            self.units_list.append(name)
+            self.xml_path_list.append(destination)
+            log.write(f'Found unit in config: {name} -> {destination}\n')
 
         units = {}
 
