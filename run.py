@@ -26,6 +26,5 @@ if __name__ == "__main__":
 else:
     # Render imports this branch
     app = create_app(
-        questions_root=questions_root,
         scratch_dir=scratch_dir
     )
