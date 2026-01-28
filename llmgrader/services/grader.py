@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 import re
 import sqlite3
+import time
 from datetime import datetime
 from concurrent.futures import TimeoutError as ThreadTimeoutError
 from openai import APITimeoutError
@@ -21,6 +22,7 @@ from llmgrader.services.parselatex import parse_latex_soln
 
 from llmgrader.services.repo import load_from_repo
 import sys
+from markupsafe import Markup
 
 
 import sys
@@ -134,6 +136,48 @@ class Grader:
         "feedback": "TEXT"
     }
 
+    # Field formatting rules for submission detail view
+    FIELD_FORMAT = {
+        "timestamp": "short_datetime",
+        "question_text": "html",
+        "ref_soln": "html",
+        "grading_notes": "html",
+        "student_soln": "wrap80",
+        "raw_prompt": "wrap80",
+        "full_explanation": "wrap80",
+        "feedback": "wrap80",
+        "result": "text",
+        "model": "text",
+        "unit_name": "text",
+        "qtag": "text",
+        "part_label": "text",
+        "timeout": "text",
+        "latency_ms": "text",
+        "timed_out": "text",
+        "tokens_in": "text",
+        "tokens_out": "text",
+        "client_id": "text",
+        "user_email": "text",
+    }
+
+    # Formats for displaying DB fields.
+    # Fields not listed here default to "wrap" format,
+    # meaning they will be wrapped in the UI.
+    FIELD_FORMAT = {
+        "timestamp": "short_datetime",
+        "question_text": "html",
+        "ref_soln": "html",
+        "unit_name": "text",
+        "qtag": "text",
+        "model": "text",
+        "timeout": "text",
+        "latency_ms": "text",
+        "timed_out": "text",
+        "tokens_in": "text",
+        "tokens_out": "text",
+    }
+
+
     
     def __init__(self, 
                  scratch_dir : str ="scratch",
@@ -154,6 +198,9 @@ class Grader:
 
         # Get teh database path
         self.db_path = self.get_db_path()
+
+        # Initialize field format
+        Grader.initialize_field_format()
         
         # Initialize the database
         self.init_db()
@@ -246,6 +293,65 @@ class Grader:
         cursor.execute(insert_sql, record)
         conn.commit()
         conn.close()
+
+    def _apply_format(self, fmt: str, value):
+        """
+        Apply a formatting rule to a field value.
+        
+        Parameters
+        ----------
+        fmt: str
+            The format type: "short_datetime", "html", "wrap80", or "text"
+        value:
+            The value to format
+            
+        Returns
+        -------
+        Formatted value
+        """
+        if value is None:
+            return ""
+        
+        if fmt == "short_datetime":
+            try:
+                return datetime.fromisoformat(str(value)).strftime("%Y-%m-%d %H:%M")
+            except (ValueError, AttributeError):
+                return str(value)
+        elif fmt == "html":
+            return Markup(str(value))
+        elif fmt == "wrap80":
+            # Wrap text to 80 characters, preserving existing line breaks
+            lines = str(value).splitlines()
+            wrapped_lines = []
+            for line in lines:
+                if len(line) <= 80:
+                    wrapped_lines.append(line)
+                else:
+                    wrapped_lines.extend(textwrap.wrap(line, width=80, break_long_words=False, break_on_hyphens=False))
+            return "\n".join(wrapped_lines)
+        else:  # "text" or default
+            return str(value)
+
+    def format_db_entry(self, row: dict) -> dict:
+        """
+        Format a database row for display in the submission detail view.
+        
+        Parameters
+        ----------
+        row: dict
+            Dictionary containing submission data (column_name: value)
+            
+        Returns
+        -------
+        dict
+            New dictionary with formatted values according to FIELD_FORMAT rules
+        """
+        formatted = {}
+        for key, value in row.items():
+            # Get format rule, default to "wrap80"
+            fmt = self.FIELD_FORMAT.get(key, "wrap80")
+            formatted[key] = self._apply_format(fmt, value)
+        return formatted
 
     def get_local_repo_parent_path(self) -> str:
         """
@@ -702,6 +808,14 @@ class Grader:
             The grading dictionary result containing 'result', 'full_explanation', and 'feedback'.
             Note the pydantic GradeResult model is converted to a dict before returning.
         """
+        # Initialize variables
+        grade = None
+        timed_out = False
+    
+        # Start measuring time
+        t0 = time.time()
+
+        
         # ---------------------------------------------------------
         # 1. Build the task prompt
         # ---------------------------------------------------------
@@ -717,7 +831,6 @@ class Grader:
         # ---------------------------------------------------------
         # 3. Call OpenAI
         # ---------------------------------------------------------
-        timed_out = False
         
         if model.startswith("gpt-5-mini"):
             temperature = 1  # gpt-5-mini only allow temperature = 1
@@ -731,73 +844,76 @@ class Grader:
                 'result': 'error', 
                 'full_explanation': 'Missing API key.', 
                 'feedback': 'Cannot grade without an API key.'}
-            return grade 
-        try:
-            client = OpenAI(api_key=api_key)
-        except Exception as e:
-            grade = {
-                'result': 'error', 
-                'full_explanation': f'Failed to create OpenAI client: {str(e)}', 
-                'feedback': 'Cannot grade without a valid API key.'}
-            return grade
+        else:
+            try:
+                client = OpenAI(api_key=api_key)
+            except Exception as e:
+                grade = {
+                    'result': 'error', 
+                    'full_explanation': f'Failed to create OpenAI client: {str(e)}', 
+                    'feedback': 'Cannot grade without a valid API key.'}
 
-        log_std('Calling OpenAI for grading...')
-        
-        # Define a function to call the OpenAI API
-        def call_openai_api():
-            return client.responses.parse(
-                model=model,
-                input=task,
-                text_format=GradeResult,
-                temperature=temperature,
-                timeout=timeout
-            )
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(call_openai_api)
-        
-        try:
-            additional_timeout = 5.0  # seconds
-            total_timeout = timeout + additional_timeout
-            response = future.result(timeout=total_timeout)
-            grade = response.output_parsed.model_dump()
-            log_std("Received response from OpenAI.")
+        # Only attempt API call if no error yet
+        if grade is None:
+            log_std('Calling OpenAI for grading...')
+            
+            # Define a function to call the OpenAI API
+            def call_openai_api():
+                return client.responses.parse(
+                    model=model,
+                    input=task,
+                    text_format=GradeResult,
+                    temperature=temperature,
+                    timeout=timeout
+                )
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(call_openai_api)
+            
+            try:
+                additional_timeout = 5.0  # seconds
+                total_timeout = timeout + additional_timeout
+                
+                # Get the result with timeout
+                response = future.result(timeout=total_timeout)
+                grade = response.output_parsed.model_dump()
+                log_std("Received response from OpenAI.")
 
-        except ThreadTimeoutError:
-            # Thread timed out
-            timed_out = True
-            log_error(f"Thread timed out after {total_timeout} seconds.")
-            explanation = (
-                f"OpenAI API did not respond within {total_timeout} seconds. "
-                f"(timeout={timeout}, extra={additional_timeout})."
-            )
-            grade = {
-                "result": "error",
-                "full_explanation": explanation,
-                "feedback": "OpenAI server not responding in time. Try again."
-            }
+            except ThreadTimeoutError:
+                # Thread timed out
+                timed_out = True
+                log_error(f"Thread timed out after {total_timeout} seconds.")
+                explanation = (
+                    f"OpenAI API did not respond within {total_timeout} seconds. "
+                    f"(timeout={timeout}, extra={additional_timeout})."
+                )
+                grade = {
+                    "result": "error",
+                    "full_explanation": explanation,
+                    "feedback": "OpenAI server not responding in time. Try again."
+                }
 
-        except APITimeoutError:
-            timed_out = True
-            log_error("OpenAI API call timed out at the SDK level.")
-            # SDK-level timeout
-            explanation = (
-                f"OpenAI API responded with a timeout after {timeout} seconds."
-            )
-            grade = {
-                "result": "error",
-                "full_explanation": explanation,
-                "feedback": "The grading request took too long to process."
-            }
-        
-        except Exception as e:
-            log_error(f"OpenAI API call failed: {str(e)}")
-            grade = {
-                'result': 'error', 
-                'full_explanation': f'OpenAI API call failed: {str(e)}', 
-                'feedback': 'There was an error while trying to grade the solution.'}
-        finally:
-            # IMPORTANT: do NOT overwrite grade here
-            executor.shutdown(wait=False, cancel_futures=True)
+            except APITimeoutError:
+                timed_out = True
+                log_error("OpenAI API call timed out at the SDK level.")
+                # SDK-level timeout
+                explanation = (
+                    f"OpenAI API responded with a timeout after {timeout} seconds."
+                )
+                grade = {
+                    "result": "error",
+                    "full_explanation": explanation,
+                    "feedback": "The grading request took too long to process."
+                }
+            
+            except Exception as e:
+                log_error(f"OpenAI API call failed: {str(e)}")
+                grade = {
+                    'result': 'error', 
+                    'full_explanation': f'OpenAI API call failed: {str(e)}', 
+                    'feedback': 'There was an error while trying to grade the solution.'}
+            finally:
+                # IMPORTANT: do NOT overwrite grade here
+                executor.shutdown(wait=False, cancel_futures=True)
 
 
         # ---------------------------------------------------------
@@ -808,8 +924,10 @@ class Grader:
             f.write(json.dumps(grade, indent=2))
         
         # ---------------------------------------------------------
-        # 5. Log submission to database
+        # 5. Log submission to database (ALWAYS happens)
         # ---------------------------------------------------------
+        t1 = time.time()
+        latency_ms = int((t1 - t0) * 1000)
         self.insert_submission(
             timestamp=datetime.now(timezone.utc).isoformat(),
             question_text=question_text,
@@ -821,6 +939,7 @@ class Grader:
             qtag=qtag,
             model=model,
             timeout=timeout,
+            latency_ms=latency_ms,
             raw_prompt=task,
             result=grade.get("result", "error"),
             full_explanation=grade.get("full_explanation", ""),
@@ -878,3 +997,20 @@ class Grader:
 
         return db_path
     
+    @staticmethod
+    def initialize_field_format():
+        # 1. Validate FIELD_FORMAT keys are real DB fields
+        unknown = set(Grader.FIELD_FORMAT.keys()) - set(Grader.DB_SCHEMA.keys())
+        if unknown:
+            raise ValueError(f"FIELD_FORMAT contains unknown fields: {unknown}")
+
+        # 2. Add missing DB fields with default formatting
+        for field in Grader.DB_SCHEMA.keys():
+            if field not in Grader.FIELD_FORMAT:
+                Grader.FIELD_FORMAT[field] = "wrap80"
+
+        # 3. Optional: warn about fields that defaulted
+        # (Useful during development, can remove later)
+        # print("FIELD_FORMAT auto-filled defaults for:", 
+        #       [f for f in DB_SCHEMA.keys() if FIELD_FORMAT[f] == "wrap80"])
+        
