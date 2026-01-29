@@ -374,6 +374,9 @@ class Grader:
         
         # If the directory doesn't exist, create it
         os.makedirs(parent_repo, exist_ok=True)
+
+        # Print the repo path
+        print('Using local repository parent path:', parent_repo)
         return parent_repo
 
     def save_uploaded_file(self, file_storage):
@@ -994,6 +997,8 @@ class Grader:
             local_dir = os.path.join(os.getcwd(), "local_data")
             os.makedirs(local_dir, exist_ok=True)
             db_path = os.path.join(local_dir, "llmgrader.db")
+
+        print('Using database path:', db_path)
 
         return db_path
     
