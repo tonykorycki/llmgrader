@@ -117,17 +117,12 @@ gunicorn app:app
 
 In the Render service settings, add:
 
-| Variable | Purpose |
-|----------|---------|
-| `LLMGRADER_ADMIN_PASSWORD` | Admin login password |
-| `PYTHON_VERSION` | Currently set to `3.12.3` |
-| `SOLN_REPO_PATH` | /var/data/repo_parent |
-
-These are required for:
-
-- Basic Auth on the admin pages  
-- Which python version to use.  I believe this can be changed.
-- Determining where the solution package will reside
+| Variable | Suggested value | Remarks 
+|----------|---------|--------- |
+| `LLMGRADER_ADMIN_PASSWORD` | Any | Set to your password for entering admin pages |
+| `PYTHON_VERSION` | `3.12.3` | Update with python version |
+| `SOLN_REPO_PATH` | /var/data/repo_parent | Sets where the solution package resides |
+| `LLMGRADER_DB_PATH` | /var/data/llmgrader.db | Sets where the [database](../analytics/dbviewer.md) resides |
 
 ---
 
@@ -140,20 +135,13 @@ Render will:
 - start the app with Gunicorn  
 - mount the persistent disk  
 
-Once deployed, visit:
+Once deployed, render assign your service a unique URL such as:
 
 ```
-https://<your-app>.onrender.com/admin/upload
+https://llmgrader-xxxx.onrender.com
 ```
 
-Log in using the admin credentials you set.
-
-Upload a test solution package to verify:
-
-- the disk is writable  
-- the package extracts correctly  
-- units load successfully  
-
+Use the URL shown in your Render dashboard.
 ---
 
 ## 🛠️ 6. Redeploying
