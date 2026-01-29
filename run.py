@@ -9,15 +9,15 @@ scratch_dir = os.path.join(os.getcwd(), "scratch")
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--local_repo", type=str, default=None,
-                        help="Local repository path for questions (if testing locally)")
+    parser.add_argument("--soln_pkg", type=str, default=None,
+                        help="Path to solution package (if testing locally)")
     args = parser.parse_args()
-    local_repo = args.local_repo
+    soln_pkg = args.soln_pkg
 
     # Create the Flask app
     app = create_app(
         scratch_dir=scratch_dir,
-        local_repo=local_repo
+        soln_pkg=soln_pkg
     )
 
     # Run locally only

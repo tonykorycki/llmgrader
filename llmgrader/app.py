@@ -5,7 +5,7 @@ import secrets
 
 def create_app(
         scratch_dir : str ="scratch",
-        local_repo : str | None = None) -> Flask:
+        soln_pkg : str | None = None) -> Flask:
     """
     Creates and configures the Flask application.
     
@@ -13,15 +13,15 @@ def create_app(
     ----------
     scratch_dir: str
         Path to the scratch directory for temporary files.
-    local_repo: str | None
-        Local repository path for questions (if testing locally).
+    soln_pkg: str | None
+        Path to solution package (if testing locally).
     """
     app = Flask(__name__)
     app.secret_key = secrets.token_hex(16)
 
     grader = Grader(
         scratch_dir=scratch_dir,
-        local_repo=local_repo)
+        soln_pkg=soln_pkg)
     controller = APIController(grader)
     controller.register(app)
 

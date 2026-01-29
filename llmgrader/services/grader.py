@@ -19,8 +19,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from typing import Literal
 from llmgrader.services.parselatex import parse_latex_soln
-
-from llmgrader.services.repo import load_from_repo
 import sys
 from markupsafe import Markup
 
@@ -181,7 +179,7 @@ class Grader:
     
     def __init__(self, 
                  scratch_dir : str ="scratch",
-                 local_repo : str | None = None
+                 soln_pkg : str | None = None
                  ):
         """
         Main Grader service class.
@@ -190,11 +188,11 @@ class Grader:
         ----------
         scratch_dir: str
             Path to the scratch directory for temporary files.
-        local_repo: str | None
-            Path to a local test repository for questions.
+        soln_pkg: str | None
+            Path to a solution package (if testing locally).
         """
         self.scratch_dir = scratch_dir
-        self.local_repo = local_repo
+        self.soln_pkg = soln_pkg
 
         # Get teh database path
         self.db_path = self.get_db_path()
@@ -215,8 +213,8 @@ class Grader:
         # Recreate it fresh
         os.makedirs(self.scratch_dir, exist_ok=True)
 
-        # Discover units
-        self.discover_units() 
+        # Load units from the solution package
+        self.load_unit_pkg() 
 
     def init_db(self):
         """
@@ -353,146 +351,117 @@ class Grader:
             formatted[key] = self._apply_format(fmt, value)
         return formatted
 
-    def get_local_repo_parent_path(self) -> str:
-        """
-        Returns the parent directory path for the local repository.
-        The repo will be cloned or manually uploaded into this directory.
-        So if local_repo is "soln_repo", this function returns the parent directory,
-        and the git repo is "hwdesign-soln.git", the full path will be "soln_repo/hwdesign-soln".
-
-        Returns
-        -------
-        str
-            Parent directory path for the local repository.
-        """
-        # Get the parent directory for the local repo
-        env_path = os.environ.get("SOLN_REPO_PATH")
-        if env_path:
-            parent_repo = env_path
-        else:
-            parent_repo = os.path.join(os.getcwd(), 'soln_repos')
-        
-        # If the directory doesn't exist, create it
-        os.makedirs(parent_repo, exist_ok=True)
-
-        # Print the repo path
-        print('Using local repository parent path:', parent_repo)
-        return parent_repo
 
     def save_uploaded_file(self, file_storage):
-        # file_storage is a Werkzeug FileStorage object
+        """
+        Save an uploaded solution package ZIP, extract it into self.soln_pkg,
+        and reload units.
+        """
+
+        # ---------------------------------------------------------
+        # 1. Save uploaded ZIP into scratch
+        # ---------------------------------------------------------
         save_path = os.path.join(self.scratch_dir, file_storage.filename)
         file_storage.save(save_path)
-        print(f"Saved uploaded file to {save_path}")
+        print(f"[Upload] Saved uploaded file to {save_path}")
 
-        # Get the parent directory for the local repo
-        parent_repo = self.get_local_repo_parent_path()
+        # ---------------------------------------------------------
+        # 2. Resolve solution package directory
+        # ---------------------------------------------------------
+        soln_pkg_path = self.soln_pkg
+        if soln_pkg_path is None:
+            return {"error": "Internal error: soln_pkg_path not set"}, 500
 
-        # Helper function to remove read-only attributes
+        print(f"[Upload] Using solution package path: {soln_pkg_path}")
+
+        # ---------------------------------------------------------
+        # 3. Clear existing package directory
+        # ---------------------------------------------------------
         def remove_readonly(func, path, excinfo):
             os.chmod(path, 0o666)
             func(path)
 
-        # Ensure the repo directory exists (or clear it)
-        if os.path.exists(parent_repo):
-            shutil.rmtree(parent_repo, onerror=remove_readonly)
-        os.makedirs(parent_repo, exist_ok=True)
+        shutil.rmtree(soln_pkg_path, onexc=remove_readonly)
+        os.makedirs(soln_pkg_path, exist_ok=True)
 
-        # 3. Unzip into local_repo
+        # ---------------------------------------------------------
+        # 4. Extract ZIP into soln_pkg_path
+        # ---------------------------------------------------------
         try:
             with zipfile.ZipFile(save_path, "r") as z:
-                z.extractall(parent_repo)
-            print(f"Extracted uploaded file into {parent_repo}")
+                z.extractall(soln_pkg_path)
+            print(f"[Upload] Extracted ZIP into {soln_pkg_path}")
         except zipfile.BadZipFile:
-            print("Uploaded file is not a valid zip file.")
+            print("[Upload] Invalid ZIP file")
             return {"error": "Uploaded file is not a valid zip file."}, 400
-        
         except Exception as e:
-            # Catch-all for unexpected issues
-            print(f"Unexpected error while extracting ZIP: {e}")
+            print(f"[Upload] Unexpected error while extracting ZIP: {e}")
             return {"error": "Failed to extract ZIP file."}, 500
-        
-        # 4. Reload units from the uploaded solution package
-        self.local_repo = parent_repo
-        print(f"Set local_repo to {parent_repo}")
-        
-        # Discover units from llmgrader_config.xml
+
+        # ---------------------------------------------------------
+        # 5. Reload units from the extracted package
+        # ---------------------------------------------------------
         try:
-            self.discover_units()
-            print(f"Units discovered successfully")
+            self.load_unit_package()
+            print("[Upload] Unit package loaded successfully")
         except Exception as e:
-            print(f"Failed to discover units: {e}")
-            return {"error": f"Failed to load units from uploaded package: {e}"}, 400
-        
-        # Verify that units were loaded
+            print(f"[Upload] Failed to load unit package: {e}")
+            return {"error": f"Failed to load units: {e}"}, 400
+
+        # ---------------------------------------------------------
+        # 6. Verify units loaded
+        # ---------------------------------------------------------
         if not self.units:
-            print("No units found in uploaded package")
-            return {"error": "No valid units found in uploaded package. Please check llmgrader_config.xml."}, 400
-        
-        print(f"Loaded {len(self.units)} unit(s): {list(self.units.keys())}")
-        
+            print("[Upload] No units found after loading")
+            return {"error": "No valid units found. Check llmgrader_config.xml."}, 400
+
+        print(f"[Upload] Loaded {len(self.units)} unit(s): {list(self.units.keys())}")
+
         return {"status": "ok"}
 
 
-    def discover_units(self):
+    def load_unit_pkg(self):
         """
-        Discovers question units in the local_repo directory.
+        Loads units from the soln_pkg directory.
         """
         self.units = {}
 
         # Log the search process
-        fn = os.path.join(self.scratch_dir, "discovery_log.txt")
+        fn = os.path.join(self.scratch_dir, "load_unit_pkg_log.txt")
         log = open(fn, "w", encoding="utf-8")
-        
+
         # Write the time and date
-
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log.write(f'Discovery started at {now}\n')
+        log.write(f'Loading unit package at {now}\n')
 
-        # Get the parent repo paths
-        parent_repo = self.get_local_repo_parent_path()
+        soln_pkg_path = self.soln_pkg
 
-        
-        if self.local_repo is not None:
-            # Use the local test repository if specified
-            local_repo = os.path.join(os.getcwd(), self.local_repo)
-            log.write('Using local test repository from: ' + local_repo + '\n')
+        if soln_pkg_path is None:
+            soln_pkg_path = os.environ.get("SOLN_PKG_PATH")
 
-        else:
-            log.write('No remote repository specified. Using local files only.\n')
-            local_repo = None
+        if soln_pkg_path is None:
+            soln_pkg_path = os.path.join(os.getcwd(), "soln_pkg")
 
-        # If local_repo is not set, set the candidates to all subdirectories of parent_repo
-        if local_repo is None:
-            candidates = [
-                os.path.join(parent_repo, d)
-                for d in os.listdir(parent_repo)
-                if os.path.isdir(os.path.join(parent_repo, d))
-            ]
-        else:
-            # Otherwise, just use the local_repo directory
-            candidates = [local_repo]
+        soln_pkg_path = os.path.abspath(soln_pkg_path)
+        self.soln_pkg = soln_pkg_path
+        log.write(f'Using solution package path: {soln_pkg_path}\n')
 
-        # Look for the llmgrader_config.xml file in the local_repo directory
-        local_repo = None
-        for c in candidates:
-            llmgrader_config_path = os.path.join(c, "llmgrader_config.xml")
-            if os.path.exists(llmgrader_config_path):
-                local_repo = c
-                log.write(f'Found llmgrader_config.xml in candidate directory: {c}\n')
-                break
-            else:
-                log.write(f'No llmgrader_config.xml in candidate directory: {c}\n')
-                
-        
-        if local_repo is None:
-            log.write('No local repository with llmgrader_config.xml found in any candidate directory.\n')
+        # Check if the directory exists
+        if not os.path.exists(soln_pkg_path):
+            # Only create it in the fallback local mode
+            log.write(f'Path does not exist. Creating directory: {soln_pkg_path}\n')
+            os.makedirs(soln_pkg_path, exist_ok=True)
+
+        # Get the path to llmgrader_config.xml
+        llmgrader_config_path = os.path.join(soln_pkg_path, "llmgrader_config.xml")
+        if not os.path.exists(llmgrader_config_path):
+            log.write(f'llmgrader_config.xml not found in solution package: {llmgrader_config_path}\n')
             self.units = {}
             log.close()
             return
+
         
         # Parse llmgrader_config.xml
-        llmgrader_config_path = os.path.join(local_repo, "llmgrader_config.xml")
         try:
             config_tree = ET.parse(llmgrader_config_path)
             config_root = config_tree.getroot()
@@ -541,7 +510,7 @@ class Grader:
 
 
             xml_path = os.path.normpath(xml_path)
-            xml_path = os.path.join(local_repo, xml_path)
+            xml_path = os.path.join(soln_pkg_path, xml_path)
 
             log.write(f'Processing unit: {name}\n')
             log.write(f'  XML file: {xml_path}\n')

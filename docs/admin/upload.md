@@ -70,7 +70,7 @@ The grader will:
 - delete the previous solution package directory  
 - extract the new ZIP  
 - load `llmgrader_config.xml`  
-- discover and load all units  
+- validate and load all units  
 - display a confirmation message
 
 If any XML is malformed or missing, the upload will fail with a descriptive error.
@@ -82,7 +82,6 @@ If any XML is malformed or missing, the upload will fail with a descriptive erro
 After a successful upload:
 
 - The package is extracted into the grader’s persistent storage  
-- `self.local_repo` is updated to point to the extracted directory  
 - Units are reloaded immediately  
 - The admin UI displays the course name and number of units  
 

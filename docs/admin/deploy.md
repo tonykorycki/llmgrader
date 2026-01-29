@@ -119,10 +119,10 @@ In the Render service settings, add:
 
 | Variable | Suggested value | Remarks 
 |----------|---------|--------- |
-| `LLMGRADER_ADMIN_PASSWORD` | Any | Set to your password for entering admin pages |
+| `LLMGRADER_ADMIN_PASSWORD` | Any | Password for entering admin pages |
 | `PYTHON_VERSION` | `3.12.3` | Update with python version |
-| `SOLN_REPO_PATH` | /var/data/repo_parent | Sets where the solution package resides |
-| `LLMGRADER_DB_PATH` | /var/data/llmgrader.db | Sets where the [database](../analytics/dbviewer.md) resides |
+| `SOLN_PKG_PATH` | /var/data/soln_pkg | Sets path to solution package |
+| `LLMGRADER_DB_PATH` | /var/data/llmgrader.db | Sets path to the [database](../analytics/dbviewer.md) |
 
 ---
 

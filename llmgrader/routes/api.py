@@ -166,7 +166,7 @@ class APIController:
         @bp.post("/reload")
         def reload_units():
             print("In /reload endpoint")
-            self.grader.discover_units()
+            self.grader.load_unit_pkg()
             return jsonify({"status": "ok"})
 
         @app.route("/admin")
