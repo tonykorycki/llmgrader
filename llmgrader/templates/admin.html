@@ -66,7 +66,7 @@
 
     <div class="admin-section">
         <h2>Upload Solution Repository</h2>
-        <p>Upload a ZIP file containing the solution repository with units.csv and question files.</p>
+        <p>Upload a ZIP file containing the llmgrader config and unit XML files.</p>
         <form id="upload-form" action="/admin/upload" method="post" enctype="multipart/form-data">
             <input type="file" name="file" id="file-input" accept=".zip">
             <button type="submit">Upload</button>
@@ -76,7 +76,7 @@
 
     <div class="admin-section">
         <h2>Reload Units</h2>
-        <p>Reload all question units from the repository. Use this after uploading a new repository or making changes.</p>
+        <p>Reload all question units from the package. Use this after uploading a new package or making changes.</p>
         <button id="reload-button" onclick="reloadUnits()">Reload Units</button>
         <div id="reload-status"></div>
     </div>

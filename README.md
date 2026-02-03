@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # LLM Grader
 
 LLM Grader is a lightweight Flask-based application to help with autograding engineering problems using large language models. 
@@ -41,6 +45,4 @@ http://127.0.0.1:5000/
 ```
 ## Documentation
 
-Documentation is being built in the `docs/ ` folder and will be published via GitHub Pages.
-
-More details will be added as the project evolves.
+More details can be found on the [GitHub pages](http://sdrangan.github.io/llmgrader/docs)

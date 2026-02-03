@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Database Viewer - LLM Grader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #57068c;
+        }
+        .nav-links {
+            margin: 20px 0;
+        }
+        .nav-links a {
+            margin-right: 15px;
+            color: #57068c;
+            text-decoration: none;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .query-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px 5px 10px 0;
+            cursor: pointer;
+            background-color: #57068c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #6f2da8;
+        }
+        .download-link {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px 5px;
+            background-color: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .download-link:hover {
+            background-color: #218838;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #ffe6e6;
+            border: 1px solid #ff0000;
+            border-radius: 4px;
+        }
+        .results-section {
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #57068c;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f0f0f0;
+        }
+        td {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .info-text {
+            color: #666;
+            font-style: italic;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Database Viewer</h1>
+    
+    <div class="nav-links">
+        <a href="/">← Home</a>
+        <a href="/admin">Admin Panel</a>
+        <a href="/dashboard">Dashboard</a>
+    </div>
+
+    <div class="query-section">
+        <h2>SQL Query</h2>
+        
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        
+        <form method="POST">
+            <textarea name="sql_query" placeholder="Enter your SQL query here...">{{ sql_query if sql_query else '' }}</textarea>
+            <br>
+            <button type="submit">Run Query</button>
+            {% if show_download %}
+            <a href="/admin/dbviewer/download" class="download-link">Download CSV</a>
+            {% endif %}
+        </form>
+        
+        <p class="info-text">
+            Showing first 20 rows. Use "Download CSV" to get all results.
+        </p>
+    </div>
+
+    <div class="results-section">
+        <h2>Results</h2>
+        
+        {% if columns %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Action</th>
+                    {% for col in columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td>
+                        <a href="/admin/submission/{{ row[0] }}" target="_blank" style="padding: 4px 8px; background-color: #57068c; color: white; text-decoration: none; border-radius: 3px; font-size: 12px;">View</a>
+                    </td>
+                    {% for cell in row %}
+                    <td title="{{ cell }}">{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="info-text">No results to display. Run a query to see data.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

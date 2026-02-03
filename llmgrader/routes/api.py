@@ -1,13 +1,48 @@
 print("LOADING api.py FROM:", __file__)
 
 import os
-from flask import Blueprint, request, jsonify
-from flask import render_template
+from functools import wraps
+from flask import Blueprint, request, jsonify, make_response
+from flask import render_template, session, Response
+import sqlite3
+import csv
+import io
+from datetime import datetime
 
 
 class APIController:
     def __init__(self, grader):
         self.grader = grader
+
+    def require_admin(self, f):
+        """
+        Decorator to protect admin routes with HTTP Basic Authentication.
+        
+        If LLMGRADER_ADMIN_PASSWORD environment variable is not set, allows all requests (dev mode).
+        Otherwise, validates password using HTTP Basic Auth (username is ignored).
+        """
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            admin_password = os.environ.get('LLMGRADER_ADMIN_PASSWORD')
+            
+            # Development mode: no password required
+            if admin_password is None:
+                return f(*args, **kwargs)
+            
+            # Check HTTP Basic Authentication
+            auth = request.authorization
+            
+            # Validate password (ignore username)
+            if not auth or auth.password != admin_password:
+                response = make_response(
+                    jsonify({"error": "Unauthorized - authentication required"}),
+                    401
+                )
+                response.headers['WWW-Authenticate'] = 'Basic realm="LLM Grader Admin"'
+                return response
+            
+            return f(*args, **kwargs)
+        return decorated_function
 
     def register(self, app):
         bp = Blueprint("api", __name__)
@@ -120,6 +155,8 @@ class APIController:
                 grading_notes=grading_notes,
                 student_soln=student_soln,
                 part_label=part_label,
+                unit_name=unit,
+                qtag=qtag,
                 model=model,
                 api_key=api_key,
                 provider=provider,
@@ -131,14 +168,16 @@ class APIController:
         @bp.post("/reload")
         def reload_units():
             print("In /reload endpoint")
-            self.grader.discover_units()
+            self.grader.load_unit_pkg()
             return jsonify({"status": "ok"})
 
         @app.route("/admin")
+        @self.require_admin
         def admin_page():
             return render_template("admin.html")
 
         @app.route("/admin/upload", methods=["POST"])
+        @self.require_admin
         def upload():
             if "file" not in request.files:
                 return {"error": "no file"}, 400
@@ -147,5 +186,201 @@ class APIController:
             self.grader.save_uploaded_file(f)
 
             return {"status": "ok"}
+
+        @app.route("/admin/dbviewer", methods=["GET", "POST"])
+        @self.require_admin
+        def dbviewer():
+            """
+            Database viewer page for viewing submissions and running SQL queries.
+            GET: Shows default query results
+            POST: Executes custom SQL query
+            """
+            if request.method == "POST":
+                # Execute custom SQL query
+                sql_query = request.form.get("sql_query", "").strip()
+                
+                if not sql_query:
+                    return render_template(
+                        "admin_dbviewer.html",
+                        error="Please enter a SQL query",
+                        rows=[],
+                        columns=[],
+                        sql_query=""
+                    )
+                
+                try:
+                    conn = sqlite3.connect(self.grader.db_path)
+                    cursor = conn.cursor()
+                    cursor.execute(sql_query)
+                    
+                    # Get column names
+                    columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                    
+                    # Get first 20 rows
+                    rows = cursor.fetchmany(20)
+                    conn.close()
+                    
+                    # Format timestamps if 'timestamp' column exists
+                    if 'timestamp' in columns:
+                        timestamp_idx = columns.index('timestamp')
+                        formatted_rows = []
+                        for row in rows:
+                            row_list = list(row)
+                            if row_list[timestamp_idx]:
+                                try:
+                                    ts = row_list[timestamp_idx]
+                                    row_list[timestamp_idx] = datetime.fromisoformat(ts).strftime("%Y-%m-%d %H:%M")
+                                except (ValueError, AttributeError):
+                                    pass  # Keep original value if parsing fails
+                            formatted_rows.append(tuple(row_list))
+                        rows = formatted_rows
+                    
+                    # Store query in session for CSV download
+                    session["last_sql"] = sql_query
+                    
+                    return render_template(
+                        "admin_dbviewer.html",
+                        rows=rows,
+                        columns=columns,
+                        sql_query=sql_query,
+                        show_download=True
+                    )
+                    
+                except Exception as e:
+                    return render_template(
+                        "admin_dbviewer.html",
+                        error=f"SQL Error: {str(e)}",
+                        rows=[],
+                        columns=[],
+                        sql_query=sql_query
+                    )
+            
+            else:
+                # GET request - show default query
+                default_query = """SELECT id, timestamp, unit_name, qtag, result, model
+FROM submissions
+ORDER BY id DESC
+LIMIT 20"""
+                
+                try:
+                    conn = sqlite3.connect(self.grader.db_path)
+                    cursor = conn.cursor()
+                    cursor.execute(default_query)
+                    
+                    columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                    rows = cursor.fetchall()
+                    conn.close()
+                    
+                    # Format timestamps if 'timestamp' column exists
+                    if 'timestamp' in columns:
+                        timestamp_idx = columns.index('timestamp')
+                        formatted_rows = []
+                        for row in rows:
+                            row_list = list(row)
+                            if row_list[timestamp_idx]:
+                                try:
+                                    ts = row_list[timestamp_idx]
+                                    row_list[timestamp_idx] = datetime.fromisoformat(ts).strftime("%Y-%m-%d %H:%M")
+                                except (ValueError, AttributeError):
+                                    pass  # Keep original value if parsing fails
+                            formatted_rows.append(tuple(row_list))
+                        rows = formatted_rows
+                    
+                    # Store query in session
+                    session["last_sql"] = default_query
+                    
+                    return render_template(
+                        "admin_dbviewer.html",
+                        rows=rows,
+                        columns=columns,
+                        sql_query=default_query,
+                        show_download=True
+                    )
+                    
+                except Exception as e:
+                    return render_template(
+                        "admin_dbviewer.html",
+                        error=f"Database Error: {str(e)}",
+                        rows=[],
+                        columns=[],
+                        sql_query=default_query
+                    )
+
+        @app.route("/admin/dbviewer/download")
+        @self.require_admin
+        def dbviewer_download():
+            """
+            Download CSV of the last SQL query results.
+            """
+            sql_query = session.get("last_sql")
+            
+            if not sql_query:
+                return {"error": "No query in session"}, 400
+            
+            try:
+                conn = sqlite3.connect(self.grader.db_path)
+                cursor = conn.cursor()
+                cursor.execute(sql_query)
+                
+                # Get column names
+                columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                
+                # Get all rows
+                rows = cursor.fetchall()
+                conn.close()
+                
+                # Generate CSV
+                output = io.StringIO()
+                writer = csv.writer(output)
+                
+                # Write header
+                writer.writerow(columns)
+                
+                # Write data rows
+                writer.writerows(rows)
+                
+                # Create response
+                csv_data = output.getvalue()
+                output.close()
+                
+                response = Response(csv_data, mimetype="text/csv")
+                response.headers["Content-Disposition"] = "attachment; filename=submissions.csv"
+                return response
+                
+            except Exception as e:
+                return {"error": f"Download Error: {str(e)}"}, 500
+
+        @app.route("/admin/submission/<int:sub_id>")
+        @self.require_admin
+        def submission_detail(sub_id):
+            """
+            Display detailed view of a single submission.
+            """
+            try:
+                conn = sqlite3.connect(self.grader.db_path)
+                conn.row_factory = sqlite3.Row  # Enable column access by name
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT * FROM submissions WHERE id = ?", (sub_id,))
+                row = cursor.fetchone()
+                conn.close()
+                
+                if not row:
+                    return {"error": f"Submission {sub_id} not found"}, 404
+                
+                # Convert row to dictionary
+                row_dict = dict(row)
+                
+                # Format the row using grader's formatting rules
+                formatted_row = self.grader.format_db_entry(row_dict)
+                
+                return render_template(
+                    "admin_submission_detail.html",
+                    row=formatted_row,
+                    sub_id=sub_id
+                )
+                
+            except Exception as e:
+                return {"error": f"Error loading submission: {str(e)}"}, 500
 
         app.register_blueprint(bp)

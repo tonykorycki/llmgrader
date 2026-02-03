@@ -8,6 +8,8 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import zipfile
 import re
+import sqlite3
+import time
 from datetime import datetime
 from concurrent.futures import TimeoutError as ThreadTimeoutError
 
@@ -18,7 +20,9 @@ from llmgrader.services.parselatex import parse_latex_soln
 from llmgrader.services.llm_client import LLMClient, GradeResult, APITimeoutError
 
 from llmgrader.services.repo import load_from_repo
+
 import sys
+from markupsafe import Markup
 from datetime import datetime, timezone
 
 def _ts():
@@ -97,31 +101,98 @@ def clean_cdata(text: str) -> str:
 
 
 class Grader:
+    # Database schema definition for submissions table
+    DB_SCHEMA = {
+        "timestamp": "TEXT NOT NULL",
+        "client_id": "TEXT",
+        "user_email": "TEXT",
+        "unit_name": "TEXT",
+        "qtag": "TEXT",
+        "part_label": "TEXT",
+        "question_text": "TEXT",
+        "ref_soln": "TEXT",
+        "grading_notes": "TEXT",
+        "student_soln": "TEXT",
+        "model": "TEXT",
+        "timeout": "REAL",
+        "latency_ms": "INTEGER",
+        "timed_out": "INTEGER",
+        "tokens_in": "INTEGER",
+        "tokens_out": "INTEGER",
+        "raw_prompt": "TEXT",
+        "result": "TEXT",
+        "full_explanation": "TEXT",
+        "feedback": "TEXT"
+    }
+
+    # Field formatting rules for submission detail view
+    FIELD_FORMAT = {
+        "timestamp": "short_datetime",
+        "question_text": "html",
+        "ref_soln": "html",
+        "grading_notes": "html",
+        "student_soln": "wrap80",
+        "raw_prompt": "wrap80",
+        "full_explanation": "wrap80",
+        "feedback": "wrap80",
+        "result": "text",
+        "model": "text",
+        "unit_name": "text",
+        "qtag": "text",
+        "part_label": "text",
+        "timeout": "text",
+        "latency_ms": "text",
+        "timed_out": "text",
+        "tokens_in": "text",
+        "tokens_out": "text",
+        "client_id": "text",
+        "user_email": "text",
+    }
+
+    # Formats for displaying DB fields.
+    # Fields not listed here default to "wrap" format,
+    # meaning they will be wrapped in the UI.
+    FIELD_FORMAT = {
+        "timestamp": "short_datetime",
+        "question_text": "html",
+        "ref_soln": "html",
+        "unit_name": "text",
+        "qtag": "text",
+        "model": "text",
+        "timeout": "text",
+        "latency_ms": "text",
+        "timed_out": "text",
+        "tokens_in": "text",
+        "tokens_out": "text",
+    }
+
+
+    
     def __init__(self, 
-                 questions_root : str ="questions", 
                  scratch_dir : str ="scratch",
-                 remote_repo : str | None = None,
-                 local_repo : str | None = None
+                 soln_pkg : str | None = None
                  ):
         """
         Main Grader service class.
 
         Parameters
         ----------
-        questions_root: str
-            Path to the root directory containing question units.
         scratch_dir: str
             Path to the scratch directory for temporary files.
-        remote_repo: str | None
-            URL of the remote git repository containing questions.
-            If None, no repository is loaded.
-        local_repo: str | None
-            Path to a local test repository for questions.
+        soln_pkg: str | None
+            Path to a solution package (if testing locally).
         """
-        self.questions_root = questions_root
         self.scratch_dir = scratch_dir
-        self.remote_repo = remote_repo
-        self.local_repo = local_repo
+        self.soln_pkg = soln_pkg
+
+        # Get teh database path
+        self.db_path = self.get_db_path()
+
+        # Initialize field format
+        Grader.initialize_field_format()
+        
+        # Initialize the database
+        self.init_db()
 
         # Initialize units dictionary
         self.units = {}
@@ -133,142 +204,295 @@ class Grader:
         # Recreate it fresh
         os.makedirs(self.scratch_dir, exist_ok=True)
 
-        # Discover units
-        self.discover_units() 
+        # Load units from the solution package
+        self.load_unit_pkg() 
 
-    def get_local_repo_parent_path(self) -> str:
+    def init_db(self):
         """
-        Returns the parent directory path for the local repository.
-        The repo will be cloned or manually uploaded into this directory.
-        So if local_repo is "soln_repo", this function returns the parent directory,
-        and the git repo is "hwdesign-soln.git", the full path will be "soln_repo/hwdesign-soln".
+        Initialize the SQLite database for storing submission data.
+        Creates the submissions table if it does not already exist.
+        
+        The schema is defined by the DB_SCHEMA class attribute, ensuring
+        a single canonical definition of the database structure.
+        
+        This function is idempotent and safe to call multiple times.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Build column definitions from DB_SCHEMA
+        column_defs = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
+        for col_name, col_type in self.DB_SCHEMA.items():
+            column_defs.append(f"{col_name} {col_type}")
+        
+        # Construct the CREATE TABLE statement
+        columns_sql = ",\n                ".join(column_defs)
+        create_table_sql = f'''
+            CREATE TABLE IF NOT EXISTS submissions (
+                {columns_sql}
+            )
+        '''
+        
+        cursor.execute(create_table_sql)
+        conn.commit()
+        conn.close()
 
+    def insert_submission(self, **kwargs):
+        """
+        Insert a submission record into the SQLite database.
+        
+        This method is schema-driven: it dynamically reads column names from
+        the DB_SCHEMA class attribute, making it future-proof against schema changes.
+        
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments matching column names in DB_SCHEMA.
+            Any columns not provided will default to None.
+            Extra keywords not in DB_SCHEMA are silently ignored.
+        
+        Examples
+        --------
+        grader.insert_submission(
+            timestamp="2026-01-28 12:34:56",
+            user_email="student@example.com",
+            unit_name="unit1",
+            qtag="basic_logic",
+            student_soln="My answer...",
+            model="gpt-4.1-mini"
+        )
+        """
+        # Build record dictionary from DB_SCHEMA columns
+        record = {}
+        for col_name in self.DB_SCHEMA.keys():
+            record[col_name] = kwargs.get(col_name)
+        
+        # Construct dynamic INSERT statement
+        columns = ", ".join(self.DB_SCHEMA.keys())
+        placeholders = ", ".join(f":{col}" for col in self.DB_SCHEMA.keys())
+        
+        insert_sql = f'''
+            INSERT INTO submissions ({columns})
+            VALUES ({placeholders})
+        '''
+        
+        # Execute the insert
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(insert_sql, record)
+        conn.commit()
+        conn.close()
+
+    def _apply_format(self, fmt: str, value):
+        """
+        Apply a formatting rule to a field value.
+        
+        Parameters
+        ----------
+        fmt: str
+            The format type: "short_datetime", "html", "wrap80", or "text"
+        value:
+            The value to format
+            
         Returns
         -------
-        str
-            Parent directory path for the local repository.
+        Formatted value
         """
-        # Get the parent directory for the local repo
-        env_path = os.environ.get("SOLN_REPO_PATH")
-        if env_path:
-            parent_repo = env_path
-        else:
-            parent_repo = os.path.join(os.getcwd(), 'soln_repos')
+        if value is None:
+            return ""
         
-        # If the directory doesn't exist, create it
-        os.makedirs(parent_repo, exist_ok=True)
-        return parent_repo
+        if fmt == "short_datetime":
+            try:
+                return datetime.fromisoformat(str(value)).strftime("%Y-%m-%d %H:%M")
+            except (ValueError, AttributeError):
+                return str(value)
+        elif fmt == "html":
+            return Markup(str(value))
+        elif fmt == "wrap80":
+            # Wrap text to 80 characters, preserving existing line breaks
+            lines = str(value).splitlines()
+            wrapped_lines = []
+            for line in lines:
+                if len(line) <= 80:
+                    wrapped_lines.append(line)
+                else:
+                    wrapped_lines.extend(textwrap.wrap(line, width=80, break_long_words=False, break_on_hyphens=False))
+            return "\n".join(wrapped_lines)
+        else:  # "text" or default
+            return str(value)
+
+    def format_db_entry(self, row: dict) -> dict:
+        """
+        Format a database row for display in the submission detail view.
+        
+        Parameters
+        ----------
+        row: dict
+            Dictionary containing submission data (column_name: value)
+            
+        Returns
+        -------
+        dict
+            New dictionary with formatted values according to FIELD_FORMAT rules
+        """
+        formatted = {}
+        for key, value in row.items():
+            # Get format rule, default to "wrap80"
+            fmt = self.FIELD_FORMAT.get(key, "wrap80")
+            formatted[key] = self._apply_format(fmt, value)
+        return formatted
+
 
     def save_uploaded_file(self, file_storage):
-        # file_storage is a Werkzeug FileStorage object
+        """
+        Save an uploaded solution package ZIP, extract it into self.soln_pkg,
+        and reload units.
+        """
+
+        # ---------------------------------------------------------
+        # 1. Save uploaded ZIP into scratch
+        # ---------------------------------------------------------
         save_path = os.path.join(self.scratch_dir, file_storage.filename)
         file_storage.save(save_path)
-        print(f"Saved uploaded file to {save_path}")
+        print(f"[Upload] Saved uploaded file to {save_path}")
 
-        # Get the parent directory for the local repo
-        parent_repo = self.get_local_repo_parent_path()
+        # ---------------------------------------------------------
+        # 2. Resolve solution package directory
+        # ---------------------------------------------------------
+        soln_pkg_path = self.soln_pkg
+        if soln_pkg_path is None:
+            return {"error": "Internal error: soln_pkg_path not set"}, 500
 
-        # Ensure the repo directory exists (or clear it)
-        if os.path.exists(parent_repo):
-            shutil.rmtree(parent_repo)
-        os.makedirs(parent_repo, exist_ok=True)
+        print(f"[Upload] Using solution package path: {soln_pkg_path}")
 
-        # 3. Unzip into local_repo
+        # ---------------------------------------------------------
+        # 3. Clear existing package directory
+        # ---------------------------------------------------------
+        def remove_readonly(func, path, excinfo):
+            os.chmod(path, 0o666)
+            func(path)
+
+        shutil.rmtree(soln_pkg_path, onexc=remove_readonly)
+        os.makedirs(soln_pkg_path, exist_ok=True)
+
+        # ---------------------------------------------------------
+        # 4. Extract ZIP into soln_pkg_path
+        # ---------------------------------------------------------
         try:
             with zipfile.ZipFile(save_path, "r") as z:
-                z.extractall(parent_repo)
-            print(f"Extracted uploaded file into {parent_repo}")
+                z.extractall(soln_pkg_path)
+            print(f"[Upload] Extracted ZIP into {soln_pkg_path}")
         except zipfile.BadZipFile:
-            print("Uploaded file is not a valid zip file.")
+            print("[Upload] Invalid ZIP file")
             return {"error": "Uploaded file is not a valid zip file."}, 400
-        
         except Exception as e:
-            # Catch-all for unexpected issues
-            print(f"Unexpected error while extracting ZIP: {e}")
+            print(f"[Upload] Unexpected error while extracting ZIP: {e}")
             return {"error": "Failed to extract ZIP file."}, 500
-        
+
+        # ---------------------------------------------------------
+        # 5. Reload units from the extracted package
+        # ---------------------------------------------------------
+        try:
+            self.load_unit_package()
+            print("[Upload] Unit package loaded successfully")
+        except Exception as e:
+            print(f"[Upload] Failed to load unit package: {e}")
+            return {"error": f"Failed to load units: {e}"}, 400
+
+        # ---------------------------------------------------------
+        # 6. Verify units loaded
+        # ---------------------------------------------------------
+        if not self.units:
+            print("[Upload] No units found after loading")
+            return {"error": "No valid units found. Check llmgrader_config.xml."}, 400
+
+        print(f"[Upload] Loaded {len(self.units)} unit(s): {list(self.units.keys())}")
+
         return {"status": "ok"}
 
 
-    def discover_units(self):
+    def load_unit_pkg(self):
         """
-        Discovers question units in the local_repo directory.
+        Loads units from the soln_pkg directory.
         """
         self.units = {}
 
         # Log the search process
-        fn = os.path.join(self.scratch_dir, "discovery_log.txt")
+        fn = os.path.join(self.scratch_dir, "load_unit_pkg_log.txt")
         log = open(fn, "w", encoding="utf-8")
-        
+
         # Write the time and date
-
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log.write(f'Discovery started at {now}\n')
+        log.write(f'Loading unit package at {now}\n')
 
-        # Get the parent repo paths
-        parent_repo = self.get_local_repo_parent_path()
+        soln_pkg_path = self.soln_pkg
+
+        if soln_pkg_path is None:
+            soln_pkg_path = os.environ.get("SOLN_PKG_PATH")
+
+        if soln_pkg_path is None:
+            soln_pkg_path = os.path.join(os.getcwd(), "soln_pkg")
+
+        soln_pkg_path = os.path.abspath(soln_pkg_path)
+        self.soln_pkg = soln_pkg_path
+        log.write(f'Using solution package path: {soln_pkg_path}\n')
+
+        # Check if the directory exists
+        if not os.path.exists(soln_pkg_path):
+            # Only create it in the fallback local mode
+            log.write(f'Path does not exist. Creating directory: {soln_pkg_path}\n')
+            os.makedirs(soln_pkg_path, exist_ok=True)
+
+        # Get the path to llmgrader_config.xml
+        llmgrader_config_path = os.path.join(soln_pkg_path, "llmgrader_config.xml")
+        if not os.path.exists(llmgrader_config_path):
+            log.write(f'llmgrader_config.xml not found in solution package: {llmgrader_config_path}\n')
+            self.units = {}
+            log.close()
+            return
 
         
-        if self.local_repo is not None:
-            # Use the local test repository if specified
-            local_repo = os.path.join(os.getcwd(), self.local_repo)
-            log.write('Using local test repository from: ' + local_repo + '\n')
-
-        elif self.remote_repo is not None:
-            # Load the git repo if specified
-            log.write('Loading questions repository from: ' + self.remote_repo + '\n')
-            local_repo = os.path.join(parent_repo, "soln_repo")
-            try:
-                load_from_repo(self.remote_repo, target_dir=local_repo)
-            except Exception as e:
-                log.write('Failed to load git repository: ' + str(e) + '\n')
-                local_repo = None
-            log.write('Git repository loaded into: ' + local_repo + '\n')
-        else:
-            log.write('No remote repository specified. Using local files only.\n')
-            local_repo = None
-
-        # If local_repo is not set, set the candidates to all subdirectories of parent_repo
-        if local_repo is None:
-            candidates = [
-                os.path.join(parent_repo, d)
-                for d in os.listdir(parent_repo)
-                if os.path.isdir(os.path.join(parent_repo, d))
-            ]
-        else:
-            # Otherwise, just use the local_repo directory
-            candidates = [local_repo]
-
-        # Look for the units.csv file in the local_repo directory
-        local_repo = None
-        for c in candidates:
-            units_csv_path = os.path.join(c, "units.csv")
-            if os.path.exists(units_csv_path):
-                local_repo = c
-                log.write(f'Found units.csv in candidate directory: {c}\n')
-                break
-            else:
-                log.write(f'No units.csv in candidate directory: {c}\n')
-        
-        if local_repo is None:
-            log.write('No local repository with units.csv found  in any candidate directory.\n')
+        # Parse llmgrader_config.xml
+        try:
+            config_tree = ET.parse(llmgrader_config_path)
+            config_root = config_tree.getroot()
+            log.write(f'Successfully parsed llmgrader_config.xml\n')
+        except Exception as e:
+            log.write(f'Failed to parse llmgrader_config.xml: {e}\n')
             self.units = {}
             log.close()
             return
         
-        # Check if has required columns
-        units_df = pd.read_csv(units_csv_path)
-        required = {"unit_name", "xml_path"}
-        if not required.issubset(units_df.columns):
-            missing = required - set(units_df.columns)
-            log.write(f"units.csv is missing required columns: {missing}\n")
+        # Extract units from config
+        units_elem = config_root.find('units')
+        if units_elem is None:
+            log.write('No <units> section found in llmgrader_config.xml\n')
             self.units = {}
             log.close()
             return
         
-        # Get the columns as lists        
-        self.units_list = units_df['unit_name'].tolist()
-        self.xml_path_list = units_df['xml_path'].tolist()
+        unit_list = units_elem.findall('unit')
+        if not unit_list:
+            log.write('No <unit> elements found in llmgrader_config.xml\n')
+            self.units = {}
+            log.close()
+            return
+        
+        # Build lists of unit names and XML paths from config
+        self.units_list = []
+        self.xml_path_list = []
+        
+        for unit in unit_list:
+            name = unit.findtext('name')
+            destination = unit.findtext('destination')
+            
+            if not name or not destination:
+                log.write(f'Skipping unit: missing <name> or <destination> element\n')
+                continue
+            
+            self.units_list.append(name)
+            self.xml_path_list.append(destination)
+            log.write(f'Found unit in config: {name} -> {destination}\n')
 
         units = {}
 
@@ -277,7 +501,7 @@ class Grader:
 
 
             xml_path = os.path.normpath(xml_path)
-            xml_path = os.path.join(local_repo, xml_path)
+            xml_path = os.path.join(soln_pkg_path, xml_path)
 
             log.write(f'Processing unit: {name}\n')
             log.write(f'  XML file: {xml_path}\n')
@@ -529,6 +753,10 @@ class Grader:
             The student's solution text.
         part_label: str
             The part label to grade (or "all" for whole question).
+        unit_name: str
+            The unit name for the question.
+        qtag: str
+            The question tag identifier.
         model: str
             The OpenAI model to use for grading.
         api_key: str | None
@@ -542,6 +770,14 @@ class Grader:
             The grading dictionary result containing 'result', 'full_explanation', and 'feedback'.
             Note the pydantic GradeResult model is converted to a dict before returning.
         """
+        # Initialize variables
+        grade = None
+        timed_out = False
+    
+        # Start measuring time
+        t0 = time.time()
+
+        
         # ---------------------------------------------------------
         # 1. Build the task prompt
         # ---------------------------------------------------------
@@ -557,6 +793,7 @@ class Grader:
         # ---------------------------------------------------------
         # 3. Call OpenAI
         # ---------------------------------------------------------
+        
         if model.startswith("gpt-5-mini"):
             temperature = 1  # gpt-5-mini only allow temperature = 1
         else:
@@ -641,6 +878,31 @@ class Grader:
         resp_path = os.path.join(self.scratch_dir, "resp.json")
         with open(resp_path, "w", encoding="utf-8") as f:
             f.write(json.dumps(grade, indent=2))
+        
+        # ---------------------------------------------------------
+        # 5. Log submission to database (ALWAYS happens)
+        # ---------------------------------------------------------
+        t1 = time.time()
+        latency_ms = int((t1 - t0) * 1000)
+        self.insert_submission(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            question_text=question_text,
+            ref_soln=solution,
+            grading_notes=grading_notes,
+            student_soln=student_soln,
+            part_label=part_label,
+            unit_name=unit_name,
+            qtag=qtag,
+            model=model,
+            timeout=timeout,
+            latency_ms=latency_ms,
+            raw_prompt=task,
+            result=grade.get("result", "error"),
+            full_explanation=grade.get("full_explanation", ""),
+            feedback=grade.get("feedback", ""),
+            timed_out=1 if timed_out else 0
+        )
+        
         return grade
         
     
@@ -668,3 +930,45 @@ class Grader:
         print(f"Loaded solution file with {len(resp)} qtags.")
         return resp
     
+    def get_db_path(self) -> str:
+        """
+        Returns the full path to the SQLite database file.
+        Uses the environment variable LLMGRADER_DB_PATH if set.
+        Otherwise defaults to a local 'local_data/llmgrader.db' file.
+
+        Returns
+        -------
+        str
+            Full path to the SQLite database file.
+        """
+        # Check environment variable (Render)
+        env_path = os.environ.get("LLMGRADER_DB_PATH")
+        if env_path:
+            db_path = env_path
+        else:
+            # Local development fallback
+            local_dir = os.path.join(os.getcwd(), "local_data")
+            os.makedirs(local_dir, exist_ok=True)
+            db_path = os.path.join(local_dir, "llmgrader.db")
+
+        print('Using database path:', db_path)
+
+        return db_path
+    
+    @staticmethod
+    def initialize_field_format():
+        # 1. Validate FIELD_FORMAT keys are real DB fields
+        unknown = set(Grader.FIELD_FORMAT.keys()) - set(Grader.DB_SCHEMA.keys())
+        if unknown:
+            raise ValueError(f"FIELD_FORMAT contains unknown fields: {unknown}")
+
+        # 2. Add missing DB fields with default formatting
+        for field in Grader.DB_SCHEMA.keys():
+            if field not in Grader.FIELD_FORMAT:
+                Grader.FIELD_FORMAT[field] = "wrap80"
+
+        # 3. Optional: warn about fields that defaulted
+        # (Useful during development, can remove later)
+        # print("FIELD_FORMAT auto-filled defaults for:", 
+        #       [f for f in DB_SCHEMA.keys() if FIELD_FORMAT[f] == "wrap80"])
+        

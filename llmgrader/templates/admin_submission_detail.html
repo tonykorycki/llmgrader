@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Submission Detail #{{ sub_id }} - LLM Grader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- MathJax for rendering LaTeX math -->
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true,
+                processEnvironments: true
+            },
+            options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #57068c;
+        }
+        .nav-links {
+            margin: 20px 0;
+        }
+        .nav-links a {
+            margin-right: 15px;
+            color: #57068c;
+            text-decoration: none;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .field-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        .field-section h3 {
+            margin-top: 0;
+            color: #333;
+            font-size: 16px;
+            border-bottom: 2px solid #57068c;
+            padding-bottom: 5px;
+        }
+        .field-content {
+            margin-top: 10px;
+        }
+        .field-content pre {
+            background: white;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .html-content {
+            background: white;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        .metadata {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .metadata-item {
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 3px;
+        }
+        .metadata-item strong {
+            color: #57068c;
+        }
+    </style>
+</head>
+<body>
+    <h1>Submission Detail #{{ sub_id }}</h1>
+    
+    <div class="nav-links">
+        <a href="/admin/dbviewer">← Back to Database Viewer</a>
+        <a href="/admin">Admin Panel</a>
+        <a href="/">Home</a>
+    </div>
+
+    <h2>Metadata</h2>
+    <div class="metadata">
+        <div class="metadata-item">
+            <strong>ID:</strong> {{ sub_id }}
+        </div>
+        <div class="metadata-item">
+            <strong>Timestamp:</strong> {{ row.timestamp }}
+        </div>
+        <div class="metadata-item">
+            <strong>Unit:</strong> {{ row.unit_name }}
+        </div>
+        <div class="metadata-item">
+            <strong>Question Tag:</strong> {{ row.qtag }}
+        </div>
+        <div class="metadata-item">
+            <strong>Part Label:</strong> {{ row.part_label }}
+        </div>
+        <div class="metadata-item">
+            <strong>Result:</strong> {{ row.result }}
+        </div>
+        <div class="metadata-item">
+            <strong>Model:</strong> {{ row.model }}
+        </div>
+        <div class="metadata-item">
+            <strong>Timeout:</strong> {{ row.timeout }}
+        </div>
+        <div class="metadata-item">
+            <strong>Timed Out:</strong> {{ row.timed_out }}
+        </div>
+        <div class="metadata-item">
+            <strong>Latency (ms):</strong> {{ row.latency_ms }}
+        </div>
+        <div class="metadata-item">
+            <strong>Tokens In:</strong> {{ row.tokens_in }}
+        </div>
+        <div class="metadata-item">
+            <strong>Tokens Out:</strong> {{ row.tokens_out }}
+        </div>
+        {% if row.client_id %}
+        <div class="metadata-item">
+            <strong>Client ID:</strong> {{ row.client_id }}
+        </div>
+        {% endif %}
+        {% if row.user_email %}
+        <div class="metadata-item">
+            <strong>User Email:</strong> {{ row.user_email }}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="field-section">
+        <h3>Question Text</h3>
+        <div class="field-content html-content">
+            {{ row.question_text | safe }}
+        </div>
+    </div>
+
+    <div class="field-section">
+        <h3>Reference Solution</h3>
+        <div class="field-content html-content">
+            {{ row.ref_soln | safe }}
+        </div>
+    </div>
+
+    <div class="field-section">
+        <h3>Grading Notes</h3>
+        <div class="field-content html-content">
+            {{ row.grading_notes | safe }}
+        </div>
+    </div>
+
+    <div class="field-section">
+        <h3>Student Solution</h3>
+        <div class="field-content">
+            <pre>{{ row.student_soln }}</pre>
+        </div>
+    </div>
+
+    <div class="field-section">
+        <h3>Feedback</h3>
+        <div class="field-content">
+            <pre>{{ row.feedback }}</pre>
+        </div>
+    </div>
+
+    <div class="field-section">
+        <h3>Full Explanation</h3>
+        <div class="field-content">
+            <pre>{{ row.full_explanation }}</pre>
+        </div>
+    </div>
+
+    <div class="field-section">
+        <h3>Raw Prompt</h3>
+        <div class="field-content">
+            <pre>{{ row.raw_prompt }}</pre>
+        </div>
+    </div>
+
+</body>
+</html>
