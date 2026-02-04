@@ -1,3 +1,27 @@
+.key-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+}
+
+.key-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.key-row label {
+    min-width: 90px;
+    font-size: 13px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.key-row .key-box {
+    width: 220px;
+}
 /* ------------------------------
    GLOBAL
 ------------------------------ */
@@ -102,6 +126,24 @@ html, body {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Stack API key fields vertically in the header */
+.key-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+}
+
+.key-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.key-stack .key-box {
+    width: 220px;
 }
 
 .api-key-label {

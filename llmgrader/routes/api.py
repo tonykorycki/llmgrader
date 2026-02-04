@@ -101,6 +101,7 @@ class APIController:
             part_label = data.get("part_label", "all")
             model = data.get("model", "gpt-4.1-mini")
             api_key = data.get("api_key", None)
+            provider = data.get("provider", None)
             timeout = data.get("timeout", 20)
 
 
@@ -158,6 +159,7 @@ class APIController:
                 qtag=qtag,
                 model=model,
                 api_key=api_key,
+                provider=provider,
                 timeout=timeout
             )
 
