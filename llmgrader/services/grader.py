@@ -393,7 +393,7 @@ class Grader:
         # 5. Reload units from the extracted package
         # ---------------------------------------------------------
         try:
-            self.load_unit_package()
+            self.load_unit_pkg()
             print("[Upload] Unit package loaded successfully")
         except Exception as e:
             print(f"[Upload] Failed to load unit package: {e}")
