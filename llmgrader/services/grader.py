@@ -19,8 +19,6 @@ from typing import Literal
 from llmgrader.services.parselatex import parse_latex_soln
 from llmgrader.services.llm_client import LLMClient, GradeResult, APITimeoutError
 
-from llmgrader.services.repo import load_from_repo
-
 import sys
 from markupsafe import Markup
 from datetime import datetime, timezone
